@@ -3,8 +3,6 @@
 
 import numpy as np
 import pandas as pd
-# import datetime as dt
-# import re
 from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.externals import joblib
 from sklearn.metrics import accuracy_score
@@ -22,7 +20,7 @@ from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords
 from nltk import word_tokenize  
 from sklearn.feature_extraction.text import TfidfVectorizer
-
+import random
 # 
 random.seed(1)
 
@@ -46,6 +44,7 @@ ag_train_set = uniqag - ag_test_set
 dc = inner[inner['Stance']=='discuss']['Body ID'].tolist()
 uniqdc_raw = set(dc)
 uniqdc = uniqdc_raw - uniqag - uniqdg
+dc_test_set_size = round(len(uniqdc)*0.15)
 dc_test_set = set(random.sample(uniqdc, dc_test_set_size))
 dc_train_set = uniqdc - dc_test_set
 
@@ -69,14 +68,22 @@ test_as_df = pd.DataFrame({'Body ID':test_ids})
 train_as_df = pd.DataFrame({'Body ID':train_ids})
 
 train_stances_df = pd.merge(stances, train_as_df, how='inner', left_on='Body ID', right_on='Body ID', sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
-train_df = pd.merge(train_stances, bodies, how='inner', left_on='Body ID', right_index=True, copy=True, indicator=False)
+train_df = pd.merge(train_stances_df, bodies, how='inner', left_on='Body ID', right_index=True, copy=True, indicator=False)
 
 
 ## make a cosine similarity matrix, where documents are the union of article bodies and headlines
-documents = stances['Headline'].tolist() + bodies['articleBody'].tolist()
+headlines = stances['Headline']
+headline_ids = stances.index
+len_headlines = len(headlines)
+articleBodies = bodies['articleBody']
+
+len_articleBodies = len(articleBodies)
+documents = headlines.tolist() + articleBodies.tolist()
 tfidf = TfidfVectorizer().fit_transform(documents)
 # no need to normalize, since Vectorizer will return normalized tf-idf
 pairwise_similarity = tfidf * tfidf.T
+cos_df = pd.DataFrame(pairwise_similarity.toarray())
+cos_df = cos_df.iloc[0:len_headlines,len_headlines:]
 
 # This class is needed to break out the complaint column in the estimation pipeline that comes later
 
