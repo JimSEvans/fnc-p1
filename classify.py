@@ -27,49 +27,39 @@ random.seed(1)
 
 bodies = pd.DataFrame.from_csv("train/train_bodies.csv")
 stances = pd.DataFrame.from_csv("train/train_stances.csv", index_col=None)
-all_data = pd.merge(stances, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+#all_data = pd.merge(stances, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
 
-dg = all_data[all_data['Stance']=='disagree']['Body ID'].tolist()
-uniqdg = set(dg)
-dg_test_set_size = round(len(uniqdg)*0.15)
-dg_test_set = set(random.sample(uniqdg, dg_test_set_size))
-dg_train_set = uniqdg - dg_test_set
+def splitIntoSets(stancesDataFrame, percentage):
+    
+    dg = stancesDataFrame[stancesDataFrame['Stance']=='disagree']['Body ID'].tolist()
+    uniqdg = set(dg)
+    dg_test_set_size = round(len(uniqdg)*percentage)
+    dg_test_set = set(random.sample(uniqdg, dg_test_set_size))
+    dg_train_set = uniqdg - dg_test_set
+    
+    ag = stancesDataFrame[stancesDataFrame['Stance']=='agree']['Body ID'].tolist()
+    uniqag_raw = set(ag)
+    uniqag = uniqag_raw - uniqdg
+    ag_test_set_size = round(len(uniqag)*percentage)
+    ag_test_set = set(random.sample(uniqag, ag_test_set_size))
+    ag_train_set = uniqag - ag_test_set
+    
+    dc = stancesDataFrame[stancesDataFrame['Stance']=='discuss']['Body ID'].tolist()
+    uniqdc_raw = set(dc)
+    uniqdc = uniqdc_raw - uniqag - uniqdg
+    dc_test_set_size = round(len(uniqdc)*percentage)
+    dc_test_set = set(random.sample(uniqdc, dc_test_set_size))
+    dc_train_set = uniqdc - dc_test_set
+    
+    train_ids = list(dg_train_set | ag_train_set | dc_train_set)
+    test_ids = list(dg_test_set | ag_test_set | dc_test_set)
+    return {'train_ids': train_ids, 'test_ids': test_ids}
 
-ag = all_data[all_data['Stance']=='agree']['Body ID'].tolist()
-uniqag_raw = set(ag)
-uniqag = uniqag_raw - uniqdg
-ag_test_set_size = round(len(uniqag)*0.15)
-ag_test_set = set(random.sample(uniqag, ag_test_set_size))
-ag_train_set = uniqag - ag_test_set
-
-dc = all_data[all_data['Stance']=='discuss']['Body ID'].tolist()
-uniqdc_raw = set(dc)
-uniqdc = uniqdc_raw - uniqag - uniqdg
-dc_test_set_size = round(len(uniqdc)*0.15)
-dc_test_set = set(random.sample(uniqdc, dc_test_set_size))
-dc_train_set = uniqdc - dc_test_set
-
-#len(dg_test_set)/(len(dg_test_set)+len(dg_train_set))
-#len(ag_test_set)/(len(ag_test_set)+len(ag_train_set))
-#len(dc_test_set)/(len(dc_test_set)+len(dc_train_set))
-
-#all_body_ids = all_data['Body ID'].tolist()
-#done = set(all_body_ids) == uniqdg | uniqag | uniqdc
-#print(done)
-
-train_ids = list(dg_train_set | ag_train_set | dc_train_set)
-test_ids = list(dg_test_set | ag_test_set | dc_test_set)
-
-#lentest = len(test)
-#lentrain = len(train)
-#lentest/(lentrain+lentest)
-#print(dg_test_set_size + ag_test_set_size + dc_test_set_size)
-#print(lentest)
 test_as_df = pd.DataFrame({'Body ID':test_ids})
 train_as_df = pd.DataFrame({'Body ID':train_ids})
 
-train_stances_df = pd.merge(stances, train_as_df, how='inner', left_on='Body ID', right_on='Body ID', sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
-train_df = pd.merge(train_stances_df, bodies, how='inner', left_on='Body ID', right_index=True, copy=True, indicator=False)
+#train_stances_df = pd.merge(stances, train_as_df, how='inner', left_on='Body ID', right_on='Body ID', sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+#train_df = pd.merge(train_stances_df, bodies, how='inner', left_on='Body ID', right_index=True, copy=True, indicator=False)
 
 
 ## make a cosine similarity matrix, where documents are the union of article bodies and headlines
@@ -82,16 +72,15 @@ len_articleBodies = len(articleBodies)
 documents = headlines.tolist() + articleBodies.tolist()
 tfidf = TfidfVectorizer().fit_transform(documents)
 # no need to normalize, since Vectorizer will return normalized tf-idf
-pairwise_similarity = tfidf * tfidf.T
+pairwise_similarity = (tfidf * tfidf.T).A
 cos_df = pd.DataFrame(pairwise_similarity.toarray())
 cos_df = cos_df.iloc[0:len_headlines,len_headlines:]
-cos_df.columns = pd.RangeIndex(start=0, stop=len_articleBodies, step=1)
-#cos_df['index'] = cos_df.index
+cos_df.columns = bodies.index
 
-def getCosSimilarity(row):
+def getCosineSimilarity(row):
     return cos_df.loc[row.name, row['Body ID']]
 
-all_data['cosSimilarity'] = all_data.apply (lambda row: getCosSimilarity(row), axis=1)
+stances['cosineSimilarity'] = stances.apply(lambda row: getCosineSimilarity(row), axis=1)
 
 # This class is needed to break out the complaint column in the estimation pipeline that comes later
 
@@ -111,21 +100,21 @@ class ItemSelector(BaseEstimator, TransformerMixin):
     def transform(self, data_dict):
         return data_dict[self.key]
 
-class MultiItemSelector(BaseEstimator, TransformerMixin):
-    """For data grouped by feature, select subset of data at a provided key.
-
-    The data is expected to be stored in a 2D data structure, where the first
-    index is over features and the second is over samples. 
-
-    """
-    def __init__(self, keylist):
-        self.keylist = keylist
-
-    def fit(self, x, y=None):
-        return self
-
-    def transform(self, data_dict):
-        return [data_dict[key] for key in self.keylist]
+#class MultiItemSelector(BaseEstimator, TransformerMixin):
+#    """For data grouped by feature, select subset of data at a provided key.
+#
+#    The data is expected to be stored in a 2D data structure, where the first
+#    index is over features and the second is over samples. 
+#
+#    """
+#    def __init__(self, keylist):
+#        self.keylist = keylist
+#
+#    def fit(self, x, y=None):
+#        return self
+#
+#    def transform(self, data_dict):
+#        return [data_dict[key] for key in self.keylist]
 
 # # This gets all features out of the headline and body column, to be vectorized with sklearn's DictVectorizer
 
@@ -133,22 +122,14 @@ class MultiItemSelector(BaseEstimator, TransformerMixin):
 # polarity/refuting agreement b/w headline & body
 ## RootDist?
 # similarity b/w headline & body
- class AllData(BaseEstimator, TransformerMixin):
+ class CosineSimilarityData(BaseEstimator, TransformerMixin):
      """Extract all features from each document for DictVectorizer"""
 
      def fit(self, x, y=None):
          return self
 
-     def _getCosSimilarity(self, columns):
-         return cos_df.iloc[columns[0],columns[1]]
-
-
-     def _getFeatures(self, columns):
-         return None
-
-
-     def transform(self, data_points):
-         return [self._getFeatures(headline, body) for [headline, body] in data_points]
+     def transform(self, cosSims):
+         return [{'cosine_similarity': cosSim} for cosSim in cosSims]
 
 
 # custom tokenizer to process text strings
@@ -222,9 +203,9 @@ class StemTokenizer(object):
                  # ('best', TruncatedSVD(n_components=150)),
              ])),
              # Featurizes dates according to DateData's transform method
-             ('cosineDist', Pipeline([
+             ('cosineSimilarity', Pipeline([
                  ('selector', ItemSelector(key='cosineSimilarity')),
-                 ('features', CosineDistData()),  # returns a list of dicts
+                 ('features', CosineSimilarityData()),  # returns a list of dicts
                  ('vect', DictVectorizer()),  # list of dicts -> feature matrix
              ])),
              # Featurizes zip codes according to ZipData's transform method
@@ -241,15 +222,15 @@ class StemTokenizer(object):
              #]))
          ],
          # weight components in FeatureUnion
-         transformer_weights={
-             'complaint': 1.0,
-             'date': 0.1,
-             'state': 0.1,
-             'zip_code': 0.1
-         },
+         #transformer_weights={
+         #    'complaint': 1.0,
+         #    'date': 0.1,
+         #    'state': 0.1,
+         #    'zip_code': 0.1
+         #},
      )),
      # Use logistic regression
-     # ('classifier', LogisticRegression(C=5.0)),
+     ('classifier', LogisticRegression(C=5.0)),
  ])
 
 # Rewrote the above pipleline since I was only using the "complaint" features in the final model
@@ -259,46 +240,71 @@ class StemTokenizer(object):
 #    ('classifier', LogisticRegression(C=5.0))
 #    ])
 
-# read in the data
-full_df_orig = pd.read_csv('train.csv', sep=',')
-full_df = full_df_orig.replace(np.nan,'', regex=True)
-train_df = full_df
-test_df = pd.read_csv('test.csv', sep=',')
-
-# # separate train and dev sets
-# length = len(full_df)
-# first_index_for_dev_set = int(round(length*0.8))
-# np.random.seed(1)
-# shuffled_df = full_df.iloc[np.random.permutation(len(full_df))]
-# train_df = shuffled_df[0:first_index_for_dev_set]
-# dev_df = shuffled_df[first_index_for_dev_set:]
-
-train = train_df[['date', 'complaint', 'state', 'zip_code']]
-target = train_df.issue
-
-# set test to either dev set or true test set
-# test = dev_df[['date', 'complaint', 'state', 'zip_code']]
-test = test_df[['date', 'complaint', 'state', 'zip_code']]
-
-print "training classifier..."
-classifier.fit(train, target)
-# joblib.dump(classifier, 'classifier.pkl')
-# classifier = joblib.load('classifier.pkl')
-
-print 'getting probabilities...'
-probabilities = classifier.predict_proba(test)
-
-
-# # print "making submission file..."
-# submission = pd.DataFrame(probabilities, columns=list(classifier.classes_))
-# submission.insert(0, 'id', test_df.id)
-# submission.to_csv('submission.csv', sep=',', index=False)
-
-# uncomment the following if testing on dev set
-# print "getting predicted labels..."
-# y = classifier.predict(test)
-# print classification_report(test_df.issue, y)
-# print accuracy_score(test_df.issue, y)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#
+## read in the data
+#full_df_orig = pd.read_csv('train.csv', sep=',')
+#full_df = full_df_orig.replace(np.nan,'', regex=True)
+#train_df = full_df
+#test_df = pd.read_csv('test.csv', sep=',')
+#
+## # separate train and dev sets
+## length = len(full_df)
+## first_index_for_dev_set = int(round(length*0.8))
+## np.random.seed(1)
+## shuffled_df = full_df.iloc[np.random.permutation(len(full_df))]
+## train_df = shuffled_df[0:first_index_for_dev_set]
+## dev_df = shuffled_df[first_index_for_dev_set:]
+#
+#train = train_df[['date', 'complaint', 'state', 'zip_code']]
+#target = train_df.issue
+#
+## set test to either dev set or true test set
+## test = dev_df[['date', 'complaint', 'state', 'zip_code']]
+#test = test_df[['date', 'complaint', 'state', 'zip_code']]
+#
+#print "training classifier..."
+#classifier.fit(train, target)
+## joblib.dump(classifier, 'classifier.pkl')
+## classifier = joblib.load('classifier.pkl')
+#
+#print 'getting probabilities...'
+#probabilities = classifier.predict_proba(test)
+#
+#
+## # print "making submission file..."
+## submission = pd.DataFrame(probabilities, columns=list(classifier.classes_))
+## submission.insert(0, 'id', test_df.id)
+## submission.to_csv('submission.csv', sep=',', index=False)
+#
+## uncomment the following if testing on dev set
+## print "getting predicted labels..."
+## y = classifier.predict(test)
+## print classification_report(test_df.issue, y)
+## print accuracy_score(test_df.issue, y)
+#
+#
+#
