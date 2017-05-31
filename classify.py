@@ -1,5 +1,6 @@
 # This is a multi-class classification task. It is part 1 of the Fake News Challenge.
 # The code below trains a model using all available training data, and generates predicted labels for the test set.
+import sys
 
 import numpy as np
 import pandas as pd
@@ -26,22 +27,22 @@ random.seed(1)
 
 bodies = pd.DataFrame.from_csv("train/train_bodies.csv")
 stances = pd.DataFrame.from_csv("train/train_stances.csv", index_col=None)
-inner = pd.merge(stances, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+all_data = pd.merge(stances, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
 
-dg = inner[inner['Stance']=='disagree']['Body ID'].tolist()
+dg = all_data[all_data['Stance']=='disagree']['Body ID'].tolist()
 uniqdg = set(dg)
 dg_test_set_size = round(len(uniqdg)*0.15)
 dg_test_set = set(random.sample(uniqdg, dg_test_set_size))
 dg_train_set = uniqdg - dg_test_set
 
-ag = inner[inner['Stance']=='agree']['Body ID'].tolist()
+ag = all_data[all_data['Stance']=='agree']['Body ID'].tolist()
 uniqag_raw = set(ag)
 uniqag = uniqag_raw - uniqdg
 ag_test_set_size = round(len(uniqag)*0.15)
 ag_test_set = set(random.sample(uniqag, ag_test_set_size))
 ag_train_set = uniqag - ag_test_set
 
-dc = inner[inner['Stance']=='discuss']['Body ID'].tolist()
+dc = all_data[all_data['Stance']=='discuss']['Body ID'].tolist()
 uniqdc_raw = set(dc)
 uniqdc = uniqdc_raw - uniqag - uniqdg
 dc_test_set_size = round(len(uniqdc)*0.15)
@@ -52,7 +53,7 @@ dc_train_set = uniqdc - dc_test_set
 #len(ag_test_set)/(len(ag_test_set)+len(ag_train_set))
 #len(dc_test_set)/(len(dc_test_set)+len(dc_train_set))
 
-#all_body_ids = inner['Body ID'].tolist()
+#all_body_ids = all_data['Body ID'].tolist()
 #done = set(all_body_ids) == uniqdg | uniqag | uniqdc
 #print(done)
 
@@ -84,6 +85,13 @@ tfidf = TfidfVectorizer().fit_transform(documents)
 pairwise_similarity = tfidf * tfidf.T
 cos_df = pd.DataFrame(pairwise_similarity.toarray())
 cos_df = cos_df.iloc[0:len_headlines,len_headlines:]
+cos_df.columns = pd.RangeIndex(start=0, stop=len_articleBodies, step=1)
+#cos_df['index'] = cos_df.index
+
+def getCosSimilarity(row):
+    return cos_df.loc[row.name, row['Body ID']]
+
+all_data['cosSimilarity'] = all_data.apply (lambda row: getCosSimilarity(row), axis=1)
 
 # This class is needed to break out the complaint column in the estimation pipeline that comes later
 
@@ -103,21 +111,21 @@ class ItemSelector(BaseEstimator, TransformerMixin):
     def transform(self, data_dict):
         return data_dict[self.key]
 
-#class MultiItemSelector(BaseEstimator, TransformerMixin):
-#    """For data grouped by feature, select subset of data at a provided key.
-#
-#    The data is expected to be stored in a 2D data structure, where the first
-#    index is over features and the second is over samples. 
-#
-#    """
-#    def __init__(self, keylist):
-#        self.keylist = keylist
-#
-#    def fit(self, x, y=None):
-#        return self
-#
-#    def transform(self, data_dict):
-#        return [data_dict[key] for key in self.keylist]
+class MultiItemSelector(BaseEstimator, TransformerMixin):
+    """For data grouped by feature, select subset of data at a provided key.
+
+    The data is expected to be stored in a 2D data structure, where the first
+    index is over features and the second is over samples. 
+
+    """
+    def __init__(self, keylist):
+        self.keylist = keylist
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, data_dict):
+        return [data_dict[key] for key in self.keylist]
 
 # # This gets all features out of the headline and body column, to be vectorized with sklearn's DictVectorizer
 
@@ -131,7 +139,12 @@ class ItemSelector(BaseEstimator, TransformerMixin):
      def fit(self, x, y=None):
          return self
 
-     def _getFeatures(self, headline, body):
+     def _getCosSimilarity(self, columns):
+         return cos_df.iloc[columns[0],columns[1]]
+
+
+     def _getFeatures(self, columns):
+         return None
 
 
      def transform(self, data_points):
@@ -210,7 +223,7 @@ class StemTokenizer(object):
              ])),
              # Featurizes dates according to DateData's transform method
              ('cosineDist', Pipeline([
-                 ('selector', ItemSelector(key='cosineDist')),
+                 ('selector', ItemSelector(key='cosineSimilarity')),
                  ('features', CosineDistData()),  # returns a list of dicts
                  ('vect', DictVectorizer()),  # list of dicts -> feature matrix
              ])),
