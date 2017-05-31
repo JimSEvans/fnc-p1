@@ -1,13 +1,12 @@
 # This is a multi-class classification task. It is part 1 of the Fake News Challenge.
 # The code below trains a model using all available training data, and generates predicted labels for the test set.
 import sys
-
-import numpy as np
+#import numpy as np
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfTransformer
-from sklearn.externals import joblib
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import classification_report
+#from sklearn.feature_extraction.text import TfidfTransformer
+#from sklearn.externals import joblib
+#from sklearn.metrics import accuracy_score
+#from sklearn.metrics import classification_report
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -17,34 +16,32 @@ from sklearn.pipeline import Pipeline
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.linear_model import LogisticRegression
 from nltk.stem.porter import PorterStemmer
-from nltk.stem import WordNetLemmatizer
+#from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords
 from nltk import word_tokenize  
-from sklearn.feature_extraction.text import TfidfVectorizer
 import random
-# 
+ 
 random.seed(1)
-
 bodies = pd.DataFrame.from_csv("train/train_bodies.csv")
 stances = pd.DataFrame.from_csv("train/train_stances.csv", index_col=None)
 #all_data = pd.merge(stances, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
 
-def splitIntoSets(stancesDataFrame, percentage):
-    
-    dg = stancesDataFrame[stancesDataFrame['Stance']=='disagree']['Body ID'].tolist()
+def splitIntoSets(stance_df, percentage):
+# disagree
+    dg = stance_df[stance_df['Stance']=='disagree']['Body ID'].tolist()
     uniqdg = set(dg)
     dg_test_set_size = round(len(uniqdg)*percentage)
     dg_test_set = set(random.sample(uniqdg, dg_test_set_size))
     dg_train_set = uniqdg - dg_test_set
-    
-    ag = stancesDataFrame[stancesDataFrame['Stance']=='agree']['Body ID'].tolist()
+# agree    
+    ag = stance_df[stance_df['Stance']=='agree']['Body ID'].tolist()
     uniqag_raw = set(ag)
     uniqag = uniqag_raw - uniqdg
     ag_test_set_size = round(len(uniqag)*percentage)
     ag_test_set = set(random.sample(uniqag, ag_test_set_size))
     ag_train_set = uniqag - ag_test_set
-    
-    dc = stancesDataFrame[stancesDataFrame['Stance']=='discuss']['Body ID'].tolist()
+# discuss    
+    dc = stance_df[stance_df['Stance']=='discuss']['Body ID'].tolist()
     uniqdc_raw = set(dc)
     uniqdc = uniqdc_raw - uniqag - uniqdg
     dc_test_set_size = round(len(uniqdc)*percentage)
@@ -53,29 +50,28 @@ def splitIntoSets(stancesDataFrame, percentage):
     
     train_ids = list(dg_train_set | ag_train_set | dc_train_set)
     test_ids = list(dg_test_set | ag_test_set | dc_test_set)
-    return {'train_ids': train_ids, 'test_ids': test_ids}
-
-test_as_df = pd.DataFrame({'Body ID':test_ids})
-train_as_df = pd.DataFrame({'Body ID':train_ids})
-
-#train_stances_df = pd.merge(stances, train_as_df, how='inner', left_on='Body ID', right_on='Body ID', sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
-#train_df = pd.merge(train_stances_df, bodies, how='inner', left_on='Body ID', right_index=True, copy=True, indicator=False)
+    test_ids_df = pd.DataFrame({'Body ID':test_ids})
+    train_ids_df = pd.DataFrame({'Body ID':train_ids})
+    train_stances_df = pd.merge(stances, train_ids_df, how='inner', left_on='Body ID', right_on='Body ID', sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+    train_stances_df = pd.merge(stances, test_ids_df, how='inner', left_on='Body ID', right_index=True, copy=True, indicator=False)
+    return [train_stances_df, test_stances_df]
 
 
-## make a cosine similarity matrix, where documents are the union of article bodies and headlines
+# make a cosine similarity matrix, where documents are the union of article bodies and headlines
 headlines = stances['Headline']
 headline_ids = stances.index
 len_headlines = len(headlines)
 articleBodies = bodies['articleBody']
-
 len_articleBodies = len(articleBodies)
 documents = headlines.tolist() + articleBodies.tolist()
 tfidf = TfidfVectorizer().fit_transform(documents)
 # no need to normalize, since Vectorizer will return normalized tf-idf
-pairwise_similarity = (tfidf * tfidf.T).A
+pairwise_similarity = (tfidf * tfidf.T)
 cos_df = pd.DataFrame(pairwise_similarity.toarray())
 cos_df = cos_df.iloc[0:len_headlines,len_headlines:]
 cos_df.columns = bodies.index
+cos_df.round(decimals=3).to_csv('cosine_similarity.csv')
+#cos_df = pd.DataFrame.from_csv('cosine_similarity.csv')
 
 def getCosineSimilarity(row):
     return cos_df.loc[row.name, row['Body ID']]
@@ -122,14 +118,14 @@ class ItemSelector(BaseEstimator, TransformerMixin):
 # polarity/refuting agreement b/w headline & body
 ## RootDist?
 # similarity b/w headline & body
- class CosineSimilarityData(BaseEstimator, TransformerMixin):
-     """Extract all features from each document for DictVectorizer"""
+class CosineSimilarityData(BaseEstimator, TransformerMixin):
+    """Extract all features from each document for DictVectorizer"""
 
-     def fit(self, x, y=None):
-         return self
+    def fit(self, x, y=None):
+        return self
 
-     def transform(self, cosSims):
-         return [{'cosine_similarity': cosSim} for cosSim in cosSims]
+    def transform(self, cosSims):
+        return [{'cosine_similarity': cosSim} for cosSim in cosSims]
 
 
 # custom tokenizer to process text strings
@@ -152,7 +148,7 @@ class StemTokenizer(object):
     def tokenize_and_stem(self, text):
         tokens = self.tokenize(text)
         if tokens is None:
-            print "\ntokens is none\n" + text
+            print("\ntokens is none\n" + text)
         stems = self.stem_tokens(tokens, self.stemmer)
         return stems
 
@@ -161,77 +157,98 @@ class StemTokenizer(object):
 
 
 # # custom tokenizer to process text strings (NOT USED IN MY FINAL MODEL)
- class LemmaTokenizer(object):
-     def __init__(self):
-         self.lemmatizer = WordNetLemmatizer()
-
-     def stem_tokens(self, tokens, lemmatizer):
-         lemmatized = []
-         for item in tokens:
-             lemmatized.append(lemmatizer.lemmatize(item))
-         return lemmatized
-
-     def tokenize(self, text):
-         lowercase_text = text.lower()
-         tokens = word_tokenize(lowercase_text)
-         filtered = [w for w in tokens if not w in stopwords.words('english')]
-         return filtered
-
-     def tokenize_and_lemmatize(self, text):
-         tokens = self.tokenize(text)
-         if tokens is None:
-             print "\ntokens is none\n" + text
-         stems = self.stem_tokens(tokens, self.lemmatizer)
-         return stems
-
-     def __call__(self, doc):
-         return self.tokenize_and_lemmatize(doc)
+# class LemmaTokenizer(object):
+#     def __init__(self):
+#         self.lemmatizer = WordNetLemmatizer()
+#
+#     def stem_tokens(self, tokens, lemmatizer):
+#         lemmatized = []
+#         for item in tokens:
+#             lemmatized.append(lemmatizer.lemmatize(item))
+#         return lemmatized
+#
+#     def tokenize(self, text):
+#         lowercase_text = text.lower()
+#         tokens = word_tokenize(lowercase_text)
+#         filtered = [w for w in tokens if not w in stopwords.words('english')]
+#         return filtered
+#
+#     def tokenize_and_lemmatize(self, text):
+#         tokens = self.tokenize(text)
+#         if tokens is None:
+#             print "\ntokens is none\n" + text
+#         stems = self.stem_tokens(tokens, self.lemmatizer)
+#         return stems
+#
+#     def __call__(self, doc):
+#         return self.tokenize_and_lemmatize(doc)
 
 
 # Note: Since I only use complaint text features, I rewrote this pipeline more succinctly under this one.
 # I left this here in case you want to see how I made models with other features.
 # # Bring together features from all four sources (complaint, date, zip_code, state)
+#classifier = Pipeline([
+#    # Combining complaint text features, date features, zip_code features, and state
+#    ('union', FeatureUnion(
+#        transformer_list=[
+#            # Pipeline for standard bag-of-words TF-IDF stemmed model for body
+#            ('complaint', Pipeline([
+#                ('selector', ItemSelector(key='complaint')),
+#                ('tfidf', TfidfVectorizer(tokenizer=StemTokenizer())),
+#                # ('best', TruncatedSVD(n_components=150)),
+#            ])),
+#            # Featurizes dates according to DateData's transform method
+#            ('date', Pipeline([
+#                ('selector', ItemSelector(key='date')),
+#                ('features', DateData()),  # returns a list of dicts
+#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+#            ])),
+#            # Featurizes zip codes according to ZipData's transform method
+#            ('zip_code', Pipeline([
+#                ('selector', ItemSelector(key='zip_code')),
+#                ('features', ZipData()),  # returns a list of dicts
+#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+#            ])),         
+#            # Featurizes states according to DateData's transform method (only one feature, the state)
+#            ('state', Pipeline([
+#                ('selector', ItemSelector(key='state')),
+#                ('features', StateData()),
+#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+#            ]))
+#        ],
+#        # weight components in FeatureUnion
+#        transformer_weights={
+#            'complaint': 1.0,
+#            'date': 0.1,
+#            'state': 0.1,
+#            'zip_code': 0.1
+#        },
+#    )),
+#    # Use logistic regression
+#    # ('classifier', LogisticRegression(C=5.0)),
+#])
 
- classifier = Pipeline([
-     # Combining complaint text features, date features, zip_code features, and state
-     ('union', FeatureUnion(
-         transformer_list=[
-             # Pipeline for standard bag-of-words TF-IDF stemmed model for body
-             ('articleBodyBoW', Pipeline([
-                 ('selector', ItemSelector(key='articleBody')),
-                 ('tfidf', TfidfVectorizer(tokenizer=StemTokenizer())),
-                 # ('best', TruncatedSVD(n_components=150)),
-             ])),
-             # Featurizes dates according to DateData's transform method
-             ('cosineSimilarity', Pipeline([
-                 ('selector', ItemSelector(key='cosineSimilarity')),
-                 ('features', CosineSimilarityData()),  # returns a list of dicts
-                 ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-             ])),
-             # Featurizes zip codes according to ZipData's transform method
-             #('zip_code', Pipeline([
-             #    ('selector', ItemSelector(key='zip_code')),
-             #    ('features', ZipData()),  # returns a list of dicts
-             #    ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-             #])),         
-             ## Featurizes states according to DateData's transform method (only one feature, the state)
-             #('state', Pipeline([
-             #    ('selector', ItemSelector(key='state')),
-             #    ('features', StateData()),
-             #    ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-             #]))
-         ],
-         # weight components in FeatureUnion
-         #transformer_weights={
-         #    'complaint': 1.0,
-         #    'date': 0.1,
-         #    'state': 0.1,
-         #    'zip_code': 0.1
-         #},
-     )),
-     # Use logistic regression
-     ('classifier', LogisticRegression(C=5.0)),
- ])
+classifier = Pipeline([
+    # Combining complaint text features, date features, zip_code features, and state
+    ('union', FeatureUnion(
+        transformer_list=[
+            # Pipeline for standard bag-of-words TF-IDF stemmed model for body
+            ('articleBodyBoW', Pipeline([
+                ('selector', ItemSelector(key='articleBody')),
+                ('tfidf', TfidfVectorizer(tokenizer=StemTokenizer())),
+                # ('best', TruncatedSVD(n_components=150)),
+            ])),
+            # Featurizes dates according to DateData's transform method
+            ('cosineSimilarity', Pipeline([
+                ('selector', ItemSelector(key='cosineSimilarity')),
+                ('features', CosineSimilarityData()),  # returns a list of dicts
+                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+            ]))
+        ],
+    )),
+    # Use logistic regression
+    ('classifier', LogisticRegression(C=5.0))
+])
 
 # Rewrote the above pipleline since I was only using the "complaint" features in the final model
 #classifier = Pipeline([
@@ -240,31 +257,19 @@ class StemTokenizer(object):
 #    ('classifier', LogisticRegression(C=5.0))
 #    ])
 
+print('hi')
+[training_and_dev_set_stance, test_set_stance] = splitIntoSets(stances, 0.15)
+[training_set_stance, dev_set_stance] = splitIntoSets(training_and_dev_set, 0.15) 
+
+training_set = pd.merge(training_set_stance, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+dev_set = pd.merge(dev_set_stance, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
 
 
+classifier.fit(training_set.drop('Stance'), training_set['Stance'])
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#
+#if __name__ == '__main__':
+#    main()
 ## read in the data
 #full_df_orig = pd.read_csv('train.csv', sep=',')
 #full_df = full_df_orig.replace(np.nan,'', regex=True)
@@ -294,7 +299,6 @@ class StemTokenizer(object):
 #print 'getting probabilities...'
 #probabilities = classifier.predict_proba(test)
 #
-#
 ## # print "making submission file..."
 ## submission = pd.DataFrame(probabilities, columns=list(classifier.classes_))
 ## submission.insert(0, 'id', test_df.id)
@@ -305,6 +309,3 @@ class StemTokenizer(object):
 ## y = classifier.predict(test)
 ## print classification_report(test_df.issue, y)
 ## print accuracy_score(test_df.issue, y)
-#
-#
-#
