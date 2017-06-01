@@ -4,9 +4,9 @@ import sys
 #import numpy as np
 import pandas as pd
 #from sklearn.feature_extraction.text import TfidfTransformer
-#from sklearn.externals import joblib
-#from sklearn.metrics import accuracy_score
-#from sklearn.metrics import classification_report
+from sklearn.externals import joblib
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import classification_report
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -16,7 +16,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.linear_model import LogisticRegression
 from nltk.stem.porter import PorterStemmer
-#from nltk.stem import WordNetLemmatizer
+from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords
 from nltk import word_tokenize  
 import random
@@ -53,30 +53,32 @@ def splitIntoSets(stance_df, percentage):
     test_ids_df = pd.DataFrame({'Body ID':test_ids})
     train_ids_df = pd.DataFrame({'Body ID':train_ids})
     train_stances_df = pd.merge(stances, train_ids_df, how='inner', left_on='Body ID', right_on='Body ID', sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
-    train_stances_df = pd.merge(stances, test_ids_df, how='inner', left_on='Body ID', right_index=True, copy=True, indicator=False)
+    test_stances_df = pd.merge(stances, test_ids_df, how='inner', left_on='Body ID', right_index=True, copy=True, indicator=False)
     return [train_stances_df, test_stances_df]
 
-
-# make a cosine similarity matrix, where documents are the union of article bodies and headlines
-headlines = stances['Headline']
-headline_ids = stances.index
-len_headlines = len(headlines)
-articleBodies = bodies['articleBody']
-len_articleBodies = len(articleBodies)
-documents = headlines.tolist() + articleBodies.tolist()
-tfidf = TfidfVectorizer().fit_transform(documents)
-# no need to normalize, since Vectorizer will return normalized tf-idf
-pairwise_similarity = (tfidf * tfidf.T)
-cos_df = pd.DataFrame(pairwise_similarity.toarray())
-cos_df = cos_df.iloc[0:len_headlines,len_headlines:]
-cos_df.columns = bodies.index
-cos_df.round(decimals=3).to_csv('cosine_similarity.csv')
-#cos_df = pd.DataFrame.from_csv('cosine_similarity.csv')
-
-def getCosineSimilarity(row):
-    return cos_df.loc[row.name, row['Body ID']]
-
-stances['cosineSimilarity'] = stances.apply(lambda row: getCosineSimilarity(row), axis=1)
+if 'new' in sys.argv:
+    # make a cosine similarity matrix, where documents are the union of article bodies and headlines
+    headlines = stances['Headline']
+    headline_ids = stances.index
+    len_headlines = len(headlines)
+    articleBodies = bodies['articleBody']
+    len_articleBodies = len(articleBodies)
+    documents = headlines.tolist() + articleBodies.tolist()
+    tfidf = TfidfVectorizer().fit_transform(documents)
+    # no need to normalize, since Vectorizer will return normalized tf-idf
+    pairwise_similarity = (tfidf * tfidf.T)
+    cos_df = pd.DataFrame(pairwise_similarity.toarray())
+    cos_df = cos_df.iloc[0:len_headlines,len_headlines:]
+    cos_df.columns = bodies.index
+    #cos_df.round(decimals=3).to_csv('cosine_similarity.csv')
+    #cos_df = pd.DataFrame.from_csv('cosine_similarity.csv')
+    def getCosineSimilarity(row):
+        return cos_df.loc[row.name, row['Body ID']]
+    
+    stances['cosineSimilarity'] = stances.apply(lambda row: getCosineSimilarity(row), axis=1)
+    stances.to_csv('stances_w_cos.csv')
+else:
+    stances = pd.DataFrame.from_csv('stances_w_cos.csv')
 
 # This class is needed to break out the complaint column in the estimation pipeline that comes later
 
@@ -125,7 +127,7 @@ class CosineSimilarityData(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, cosSims):
-        return [{'cosine_similarity': cosSim} for cosSim in cosSims]
+        return [{'cosineSimilarity': cosSim} for cosSim in cosSims]
 
 
 # custom tokenizer to process text strings
@@ -156,77 +158,32 @@ class StemTokenizer(object):
         return self.tokenize_and_stem(doc)
 
 
-# # custom tokenizer to process text strings (NOT USED IN MY FINAL MODEL)
-# class LemmaTokenizer(object):
-#     def __init__(self):
-#         self.lemmatizer = WordNetLemmatizer()
-#
-#     def stem_tokens(self, tokens, lemmatizer):
-#         lemmatized = []
-#         for item in tokens:
-#             lemmatized.append(lemmatizer.lemmatize(item))
-#         return lemmatized
-#
-#     def tokenize(self, text):
-#         lowercase_text = text.lower()
-#         tokens = word_tokenize(lowercase_text)
-#         filtered = [w for w in tokens if not w in stopwords.words('english')]
-#         return filtered
-#
-#     def tokenize_and_lemmatize(self, text):
-#         tokens = self.tokenize(text)
-#         if tokens is None:
-#             print "\ntokens is none\n" + text
-#         stems = self.stem_tokens(tokens, self.lemmatizer)
-#         return stems
-#
-#     def __call__(self, doc):
-#         return self.tokenize_and_lemmatize(doc)
+# custom tokenizer to process text strings (NOT USED IN MY FINAL MODEL)
+class LemmaTokenizer(object):
+    def __init__(self):
+        self.lemmatizer = WordNetLemmatizer()
 
+    def stem_tokens(self, tokens, lemmatizer):
+        lemmatized = []
+        for item in tokens:
+            lemmatized.append(lemmatizer.lemmatize(item))
+        return lemmatized
 
-# Note: Since I only use complaint text features, I rewrote this pipeline more succinctly under this one.
-# I left this here in case you want to see how I made models with other features.
-# # Bring together features from all four sources (complaint, date, zip_code, state)
-#classifier = Pipeline([
-#    # Combining complaint text features, date features, zip_code features, and state
-#    ('union', FeatureUnion(
-#        transformer_list=[
-#            # Pipeline for standard bag-of-words TF-IDF stemmed model for body
-#            ('complaint', Pipeline([
-#                ('selector', ItemSelector(key='complaint')),
-#                ('tfidf', TfidfVectorizer(tokenizer=StemTokenizer())),
-#                # ('best', TruncatedSVD(n_components=150)),
-#            ])),
-#            # Featurizes dates according to DateData's transform method
-#            ('date', Pipeline([
-#                ('selector', ItemSelector(key='date')),
-#                ('features', DateData()),  # returns a list of dicts
-#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-#            ])),
-#            # Featurizes zip codes according to ZipData's transform method
-#            ('zip_code', Pipeline([
-#                ('selector', ItemSelector(key='zip_code')),
-#                ('features', ZipData()),  # returns a list of dicts
-#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-#            ])),         
-#            # Featurizes states according to DateData's transform method (only one feature, the state)
-#            ('state', Pipeline([
-#                ('selector', ItemSelector(key='state')),
-#                ('features', StateData()),
-#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-#            ]))
-#        ],
-#        # weight components in FeatureUnion
-#        transformer_weights={
-#            'complaint': 1.0,
-#            'date': 0.1,
-#            'state': 0.1,
-#            'zip_code': 0.1
-#        },
-#    )),
-#    # Use logistic regression
-#    # ('classifier', LogisticRegression(C=5.0)),
-#])
+    def tokenize(self, text):
+        lowercase_text = text.lower()
+        tokens = word_tokenize(lowercase_text)
+        filtered = [w for w in tokens if not w in stopwords.words('english')]
+        return filtered
+
+    def tokenize_and_lemmatize(self, text):
+        tokens = self.tokenize(text)
+        if tokens is None:
+            print("\ntokens is none\n" + text)
+        stems = self.stem_tokens(tokens, self.lemmatizer)
+        return stems
+
+    def __call__(self, doc):
+        return self.tokenize_and_lemmatize(doc)
 
 classifier = Pipeline([
     # Combining complaint text features, date features, zip_code features, and state
@@ -235,7 +192,12 @@ classifier = Pipeline([
             # Pipeline for standard bag-of-words TF-IDF stemmed model for body
             ('articleBodyBoW', Pipeline([
                 ('selector', ItemSelector(key='articleBody')),
-                ('tfidf', TfidfVectorizer(tokenizer=StemTokenizer())),
+                ('tfidf', TfidfVectorizer(tokenizer=LemmaTokenizer())),
+                # ('best', TruncatedSVD(n_components=150)),
+            ])),
+            ('HeadlineBoW', Pipeline([
+                ('selector', ItemSelector(key='Headline')),
+                ('tfidf', TfidfVectorizer(tokenizer=LemmaTokenizer())),
                 # ('best', TruncatedSVD(n_components=150)),
             ])),
             # Featurizes dates according to DateData's transform method
@@ -247,7 +209,7 @@ classifier = Pipeline([
         ],
     )),
     # Use logistic regression
-    ('classifier', LogisticRegression(C=5.0))
+    ('classifier', LogisticRegression(class_weight='balanced'))
 ])
 
 # Rewrote the above pipleline since I was only using the "complaint" features in the final model
@@ -257,15 +219,34 @@ classifier = Pipeline([
 #    ('classifier', LogisticRegression(C=5.0))
 #    ])
 
-print('hi')
 [training_and_dev_set_stance, test_set_stance] = splitIntoSets(stances, 0.15)
-[training_set_stance, dev_set_stance] = splitIntoSets(training_and_dev_set, 0.15) 
+[training_set_stance, dev_set_stance] = splitIntoSets(training_and_dev_set_stance, 0.15) 
 
-training_set = pd.merge(training_set_stance, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
-dev_set = pd.merge(dev_set_stance, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+training_on = training_set_stance
+testing_on = dev_set_stance
+if "real-test" in sys.argv:
+    training_on = training_and_dev_set_stance
+    testing_on = test_set_stance
+
+training_set = pd.merge(training_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+test_set = pd.merge(testing_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+
+## just unrelated vs related ******************* !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#training_set['Stance'] = training_set.apply(lambda row: 'unrelated' if row['Stance'] == 'unrelated' else 'related', axis=1)
+#test_set['Stance'] = test_set.apply(lambda row: 'unrelated' if row['Stance'] == 'unrelated' else 'related', axis=1)
+## ******************* !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+classifier.fit(training_set.drop('Stance', axis = 1), training_set['Stance'])
+
+#joblib.dump(classifier, 'classifier.pkl')
+
+# uncomment the following if testing on dev set
+print("getting predicted labels...")
+yhat = classifier.predict(test_set)
+print(classification_report(test_set['Stance'], yhat))
+print(accuracy_score(test_set['Stance'], yhat))
 
 
-classifier.fit(training_set.drop('Stance'), training_set['Stance'])
 
 
 #if __name__ == '__main__':
@@ -293,7 +274,6 @@ classifier.fit(training_set.drop('Stance'), training_set['Stance'])
 #
 #print "training classifier..."
 #classifier.fit(train, target)
-## joblib.dump(classifier, 'classifier.pkl')
 ## classifier = joblib.load('classifier.pkl')
 #
 #print 'getting probabilities...'
@@ -304,8 +284,3 @@ classifier.fit(training_set.drop('Stance'), training_set['Stance'])
 ## submission.insert(0, 'id', test_df.id)
 ## submission.to_csv('submission.csv', sep=',', index=False)
 #
-## uncomment the following if testing on dev set
-## print "getting predicted labels..."
-## y = classifier.predict(test)
-## print classification_report(test_df.issue, y)
-## print accuracy_score(test_df.issue, y)
