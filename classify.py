@@ -1,11 +1,14 @@
 # This is a multi-class classification task. It is part 1 of the Fake News Challenge.
 # The code below trains a model using all available training data, and generates predicted labels for the test set.
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MaxAbsScaler
 from pycorenlp import StanfordCoreNLP
 from datetime import datetime
 #from langdetect import detect
 #from langdetect import DetectorFactory
 import sys
-#import numpy as np
+import numpy as np
 import pandas as pd
 #from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.externals import joblib
@@ -36,38 +39,23 @@ stances = pd.DataFrame.from_csv("train/train_stances.csv", index_col=None)
 # remember to start Stanford CoreNLP server (perhaps in separate terminal window or tab)
 #nlp = StanfordCoreNLP('http://localhost:9000')
 
-def countNeg(string):
-    res = string.count("n\'t")
-    tokens = string.split()
-    tokens2 = [t for t in tokens if (t == 'not' or t == 'cannot')]
-    res += len(tokens2)
-    return res
-
-def boolNeg(string):
-    res = "n\'t" in string
-    tokens = string.split()
-    tokens2 = [t for t in tokens if (t == 'not' or t == 'cannot')]
-    res = res or (len(tokens2) > 0)
-    return res
+#def countNeg(string):
+#    res = string.count("n\'t")
+#    tokens = string.split()
+#    tokens2 = [t for t in tokens if (t == 'not' or t == 'cannot')]
+#    res += len(tokens2)
+#    return res
+#
+#def boolNeg(string):
+#    res = "n\'t" in string
+#    tokens = string.split()
+#    tokens2 = [t for t in tokens if (t == 'not' or t == 'cannot')]
+#    res = res or (len(tokens2) > 0)
+#    return res
 
 #bodies['bodyBoolNeg'] = bodies.apply(lambda row: boolNeg(row['articleBody']), axis=1)
 #bodies['bodyNeg'] = bodies.apply(lambda row: getNeg(row['articleBody']), axis=1)
 #stances['stanceBoolNeg'] = stances.apply(lambda row: getNeg(row['Headline']), axis=1)
-
-
-
-#def getNegWords(text):
-#    output = nlp.annotate(text, properties={'annotators': 'depparse','outputFormat': 'json'})
-#    try:
-#        sentence_data = output['sentences'][0]
-#        dep_parse = sentence_data['basicDependencies']
-#        negated = []
-#        for dikt in dep_parse:
-#            if dikt['dep']=='neg':
-#                negated.append(dikt['governorGloss'])
-#        return(" ".join(negated))
-#    except:
-#        return("")
 
 def splitIntoSets(stance_df, percentage):
 # disagree
@@ -115,18 +103,31 @@ if 'new' in sys.argv:
     cos_df.columns = bodies.index
     #cos_df.round(decimals=3).to_csv('cosine_similarity.csv')
     #cos_df = pd.DataFrame.from_csv('cosine_similarity.csv')
-    #def getCosineSimilarity(row):
-    #    return cos_df.loc[row.name, row['Body ID']]
-    #
-    #stances['cosineSimilarity'] = stances.apply(lambda row: getCosineSimilarity(row), axis=1)
-    #stances.to_csv('stances_w_cos.csv')
+    def getCosineSimilarity(row):
+        return cos_df.loc[row.name, row['Body ID']]
+    
+    stances['cosineSimilarity'] = stances.apply(lambda row: getCosineSimilarity(row), axis=1)
+    stances.to_csv('stances_cos.csv')
+    def getNegWords(text):
+        output = nlp.annotate(text, properties={'annotators': 'depparse','outputFormat': 'json'})
+        try:
+            sentence_data = output['sentences'][0]
+            dep_parse = sentence_data['basicDependencies']
+            negated = []
+            for dikt in dep_parse:
+                if dikt['dep']=='neg':
+                    negated.append(dikt['governorGloss'])
+            return(" ".join(negated))
+        except:
+            return("")
+    bodies['bodyNegatedWords'] = bodies.apply(lambda row: getNegWords(row['articleBody']), axis=1)
+    bodies.to_csv('bodies_new.csv')
+    stances['headlineNegatedWords'] = stances.apply(lambda row: getNegWords(row['Headline']), axis=1)
+    stances.to_csv('stances_new.csv')
+
 else:
     stances = pd.DataFrame.from_csv('stances.csv')
     bodies = pd.DataFrame.from_csv('bodies.csv')
-    #bodies['bodyNegatedWords'] = bodies.apply(lambda row: getNegWords(row['articleBody']), axis=1)
-    #bodies.to_csv('bodies_new.csv')
-    #stances['headlineNegatedWords'] = stances.apply(lambda row: getNegWords(row['Headline']), axis=1)
-    #stances.to_csv('stances_new.csv')
     #stances['detectedLang'] = stances.apply(lambda row: detect(row['Headline']), axis=1)
     #bodies['detectedLang'] = bodies.apply(lambda row: detect(row['articleBody']), axis=1)
 
@@ -143,9 +144,20 @@ class ItemSelector(BaseEstimator, TransformerMixin):
     def transform(self, data_dict):
         return data_dict[self.key]
 
-# # This gets all features out of the headline and body column, to be vectorized with sklearn's DictVectorizer
 class CosineSimilarityData(BaseEstimator, TransformerMixin):
     """Extract all features from each document for DictVectorizer"""
+    def fit(self, x, y=None):
+        return self
+    def transform(self, cosSims):
+        return [{'cosineSimilarity': cosSim} for cosSim in cosSims]
+        #return df['cosineSimilarity'].tolist()
+        #return [{'cosineSimilarity': cosSim} for cosSim in cosSims]
+#    def fit(self, x, y=None):
+#        return self
+#    def transform(self, cosSims):
+#        #return cosSims
+
+class TwoColumnData(BaseEstimator, TransformerMixin):
     def fit(self, x, y=None):
         return self
     def transform(self, cosSims):
@@ -153,29 +165,65 @@ class CosineSimilarityData(BaseEstimator, TransformerMixin):
 
 class QuestionMarkAndNegData(BaseEstimator, TransformerMixin):
     """Extract all features from each document for DictVectorizer"""
-    def fit(self, x, y=None):
+    def countNeg(self, hlstring, bdstring):
+        hlres = hlstring.count("n\'t")
+        hltokens = hlstring.split()
+        hltokens2 = [t for t in hltokens if (t == 'not' or t == 'cannot')]
+        hlres += len(hltokens2)
+        bdres = bdstring.count("n\'t")
+        bdtokens = bdstring.split()
+        bdtokens2 = [t for t in bdtokens if (t == 'not' or t == 'cannot')]
+        bdres += len(bdtokens2)
+#bool
+        hlboolres = "n\'t" in hlstring
+        hlbooltokens = hlstring.split()
+        hlbooltokens2 = [t for t in hlbooltokens if (t == 'not' or t == 'cannot')]
+        hlboolres = hlboolres or (len(hlbooltokens2) > 0)
+        bdboolres = "n\'t" in bdstring
+        bdbooltokens = bdstring.split()
+        bdbooltokens2 = [t for t in bdbooltokens if (t == 'not' or t == 'cannot')]
+        bdboolres = bdboolres or (len(bdbooltokens2) > 0)
+        return {'hl_question_mark_count': hlstring.count("?"),
+                    'hl_question_mark_bool': "?" in hlstring,
+                    'hl_neg_count': hlres,
+                    'hl_neg_bool': hlboolres,
+                    'bd_question_mark_bool': "?" in bdstring,
+                    'bd_neg_count': bdres,
+                    'bd_neg_bool': bdboolres,
+                    'abs_count_diff': abs(hlres-bdres),
+                    'abs_bool_diff': abs(hlboolres-bdboolres)
+                }
+    def fit(self, df, y=None):
         return self
-    def countNeg(self, string):
-        res = string.count("n\'t")
-        tokens = string.split()
-        tokens2 = [t for t in tokens if (t == 'not' or t == 'cannot')]
-        res += len(tokens2)
-        return res
-    def boolNeg(self, string):
-        res = "n\'t" in string
-        tokens = string.split()
-        tokens2 = [t for t in tokens if (t == 'not' or t == 'cannot')]
-        res = res or (len(tokens2) > 0)
-        return res
-    def transform(self, strings):
-        return [
-                {
-                    'question_mark_count': string.count("?"),
-                    'question_mark_bool': "?" in string,
-                    'neg_count': self.countNeg(string),
-                    'neg_bool': self.boolNeg(string)
-                    } for string in strings
-                ]
+
+    def transform(self, df):
+        #scaler = MinMaxScaler()
+        res =  df.apply(lambda row: self.countNeg(row['Headline'],row['articleBody']), axis=1)
+        #foo = scaler.fit_transform(np.array([x['hl_question_mark_count'] for x in res]).reshape(-1,1))
+        return(res)
+
+
+#    def boolNeg(self, hlstring):
+#        hlres = "n\'t" in hlstring
+#        hltokens = hlstring.split()
+#        hltokens2 = [t for t in hltokens if (t == 'not' or t == 'cannot')]
+#        hlres = hlres or (len(hltokens2) > 0)
+#        bdres = "n\'t" in bdstring
+#        bdtokens = bdstring.split()
+#        bdtokens2 = [t for t in bdtokens if (t == 'not' or t == 'cannot')]
+#        bdres = bdres or (len(bdtokens2) > 0)
+#        return [hlres,bdres,abs(hlres-bdres)]
+#    def transform(self, df):
+#        hl = df['Headline']
+#        bd = df['articleBody']
+#        return [
+#                {
+#                    'question_mark_count': string.count("?"),
+#                    'question_mark_bool': "?" in string,
+#                    'neg_count': self.countNeg(string),
+#                    'neg_bool': self.boolNeg(string)
+#                    } for string in strings
+#                ]
 # custom tokenizer to process text strings
 #class StemTokenizer(object):
 #    def __init__(self):
@@ -198,7 +246,6 @@ class QuestionMarkAndNegData(BaseEstimator, TransformerMixin):
 #        return stems
 #    def __call__(self, doc):
 #        return self.tokenize_and_stem(doc)
-
 
 # custom tokenizer to process text strings
 class LemmaTokenizer(object):
@@ -240,14 +287,15 @@ classifier = Pipeline([
 #            ])),
             # Featurizes dates according to DateData's transform method
             ('QuestionMarkAndNegData', Pipeline([
-                ('selector', ItemSelector(key='Headline')),
                 ('features', QuestionMarkAndNegData()),  # returns a list of dicts
                 ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+                ('scaler', MaxAbsScaler())
             ])),
             ('cosineSimilarity', Pipeline([
                 ('selector', ItemSelector(key='cosineSimilarity')),
                 ('features', CosineSimilarityData()),  # returns a list of dicts
                 ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+                ('scaler', MaxAbsScaler())
             ]))
         ],
     )),
@@ -255,7 +303,6 @@ classifier = Pipeline([
     ('classifier', LogisticRegression(C=0.1,class_weight='balanced'))
     #('classifier', SVC(C=1.0,class_weight='balanced'))
 ])
-QuestionMarkAndNegData
 # Rewrote the above pipleline since I was only using the "complaint" features in the final model
 #classifier = Pipeline([
 #    ('column_selector', ItemSelector(key='complaint')),
@@ -271,6 +318,8 @@ testing_on = dev_set_stance
 if "real-test" in sys.argv:
     training_on = training_and_dev_set_stance
     testing_on = test_set_stance
+
+#if "competition-test" in sys.argv:
 
 training_set = pd.merge(training_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
 test_set = pd.merge(testing_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
@@ -293,4 +342,4 @@ date_parts = [str(x) for x in [now.month,now.day,now.year]]
 time_parts = [str(x) for x in [now.hour,now.minute,now.second]]
 now_str = "-".join(date_parts) + "_" + "-".join(time_parts)
 
-joblib.dump(classifier, 'classifier' + now_str + '.pkl')
+joblib.dump(classifier, 'classifiers/classifier' + now_str + '.pkl')
