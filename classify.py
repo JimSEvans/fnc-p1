@@ -1,345 +1,393 @@
+# 22563.250 was the top score
 # This is a multi-class classification task. It is part 1 of the Fake News Challenge.
-# The code below trains a model using all available training data, and generates predicted labels for the test set.
-from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.preprocessing import MaxAbsScaler
+from gensim.models import KeyedVectors
+import util
+from score import report_score
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, MaxAbsScaler
 from pycorenlp import StanfordCoreNLP
 from datetime import datetime
-#from langdetect import detect
-#from langdetect import DetectorFactory
+from langdetect import DetectorFactory, detect
 import sys
 import numpy as np
 import pandas as pd
-#from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.externals import joblib
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import classification_report
+from sklearn.metrics import accuracy_score, classification_report
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.pipeline import FeatureUnion
-from sklearn.pipeline import Pipeline
+from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.svm import SVC
-#from sklearn.svm import LinearSVC
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.linear_model import LogisticRegression
 from nltk.stem.porter import PorterStemmer
-from nltk.stem import WordNetLemmatizer
-from nltk.corpus import stopwords
-from nltk import word_tokenize  
 import random
- 
+#from sklearn.svm import LinearSVC
 #DetectorFactory.seed = 0
 random.seed(1)
 
 bodies = pd.DataFrame.from_csv("train/train_bodies.csv")
 stances = pd.DataFrame.from_csv("train/train_stances.csv", index_col=None)
-#all_data = pd.merge(stances, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+all_data = pd.merge(stances, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
 
-# remember to start Stanford CoreNLP server (perhaps in separate terminal window or tab)
-#nlp = StanfordCoreNLP('http://localhost:9000')
+bodycols = list(bodies)
+stancecols = list(stances)
 
-#def countNeg(string):
-#    res = string.count("n\'t")
-#    tokens = string.split()
-#    tokens2 = [t for t in tokens if (t == 'not' or t == 'cannot')]
-#    res += len(tokens2)
-#    return res
+if 'lang' not in bodycols:
+    bodies['lang'] = bodies.apply(lambda row: detect(row['articleBody']), axis=1)
+    bodies.to_csv('train/train_bodies.csv')
+
+# TRANSLATION COLUMN
+
+if 'cosine' not in stancecols:
+    vectorizer = TfidfVectorizer(tokenizer=util.LemmaTokenizer())
+    stances['cosine'] = all_data.apply(lambda row: util.getCosineSimilarity(vectorizer, row['articleBody'], row['Headline']), axis=1)
+    stances.to_csv("train/train_stances.csv")
+
+
+if 'WMD' not in stancecols:
+    vectors = KeyedVectors.load_word2vec_format("data/GoogleNews-vectors-negative300.bin.gz", binary=True)
+    stances['WMD'] = all_data.apply(lambda row: util.getWordMoversDistance(vectors, row['articleBody'], row['Headline']), axis=1)
+    stances.to_csv("train/train_stances.csv")
+
+#if 'negatedWords' not in stancecols:
+#    nlp = StanfordCoreNLP('http://localhost:9000')
+#    stances['negated'] = all_data.apply(lambda row: util.getNegatedWords(vectors, row['articleBody'], row['Headline']), axis=1)
+#    stances['negatedWMD'] = all_data.apply(lambda row: util.getWordMoversDistance(vectors, row['articleBody'], row['Headline']), axis=1) 
 #
-#def boolNeg(string):
-#    res = "n\'t" in string
-#    tokens = string.split()
-#    tokens2 = [t for t in tokens if (t == 'not' or t == 'cannot')]
-#    res = res or (len(tokens2) > 0)
-#    return res
-
-#bodies['bodyBoolNeg'] = bodies.apply(lambda row: boolNeg(row['articleBody']), axis=1)
-#bodies['bodyNeg'] = bodies.apply(lambda row: getNeg(row['articleBody']), axis=1)
-#stances['stanceBoolNeg'] = stances.apply(lambda row: getNeg(row['Headline']), axis=1)
-
-def splitIntoSets(stance_df, percentage):
-# disagree
-    dg = stance_df[stance_df['Stance']=='disagree']['Body ID'].tolist()
-    uniqdg = set(dg)
-    dg_test_set_size = round(len(uniqdg)*percentage)
-    dg_test_set = set(random.sample(uniqdg, dg_test_set_size))
-    dg_train_set = uniqdg - dg_test_set
-# agree    
-    ag = stance_df[stance_df['Stance']=='agree']['Body ID'].tolist()
-    uniqag_raw = set(ag)
-    uniqag = uniqag_raw - uniqdg
-    ag_test_set_size = round(len(uniqag)*percentage)
-    ag_test_set = set(random.sample(uniqag, ag_test_set_size))
-    ag_train_set = uniqag - ag_test_set
-# discuss    
-    dc = stance_df[stance_df['Stance']=='discuss']['Body ID'].tolist()
-    uniqdc_raw = set(dc)
-    uniqdc = uniqdc_raw - uniqag - uniqdg
-    dc_test_set_size = round(len(uniqdc)*percentage)
-    dc_test_set = set(random.sample(uniqdc, dc_test_set_size))
-    dc_train_set = uniqdc - dc_test_set
-    
-    train_ids = list(dg_train_set | ag_train_set | dc_train_set)
-    test_ids = list(dg_test_set | ag_test_set | dc_test_set)
-    test_ids_df = pd.DataFrame({'Body ID':test_ids})
-    train_ids_df = pd.DataFrame({'Body ID':train_ids})
-    train_stances_df = pd.merge(stances, train_ids_df, how='inner', left_on='Body ID', right_on='Body ID', sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
-    test_stances_df = pd.merge(stances, test_ids_df, how='inner', left_on='Body ID', right_index=True, copy=True, indicator=False)
-    return [train_stances_df, test_stances_df]
-
-if 'new' in sys.argv:
-    # make a cosine similarity matrix, where documents are the union of article bodies and headlines
-    headlines = stances['Headline']
-    headline_ids = stances.index
-    len_headlines = len(headlines)
-    articleBodies = bodies['articleBody']
-    len_articleBodies = len(articleBodies)
-    documents = headlines.tolist() + articleBodies.tolist()
-    tfidf = TfidfVectorizer().fit_transform(documents)
-    # no need to normalize, since Vectorizer will return normalized tf-idf
-    pairwise_similarity = (tfidf * tfidf.T)
-    cos_df = pd.DataFrame(pairwise_similarity.toarray())
-    cos_df = cos_df.iloc[0:len_headlines,len_headlines:]
-    cos_df.columns = bodies.index
-    #cos_df.round(decimals=3).to_csv('cosine_similarity.csv')
-    #cos_df = pd.DataFrame.from_csv('cosine_similarity.csv')
-    def getCosineSimilarity(row):
-        return cos_df.loc[row.name, row['Body ID']]
-    
-    stances['cosineSimilarity'] = stances.apply(lambda row: getCosineSimilarity(row), axis=1)
-    stances.to_csv('stances_cos.csv')
-    def getNegWords(text):
-        output = nlp.annotate(text, properties={'annotators': 'depparse','outputFormat': 'json'})
-        try:
-            sentence_data = output['sentences'][0]
-            dep_parse = sentence_data['basicDependencies']
-            negated = []
-            for dikt in dep_parse:
-                if dikt['dep']=='neg':
-                    negated.append(dikt['governorGloss'])
-            return(" ".join(negated))
-        except:
-            return("")
-    bodies['bodyNegatedWords'] = bodies.apply(lambda row: getNegWords(row['articleBody']), axis=1)
-    bodies.to_csv('bodies_new.csv')
-    stances['headlineNegatedWords'] = stances.apply(lambda row: getNegWords(row['Headline']), axis=1)
-    stances.to_csv('stances_new.csv')
-
-else:
-    stances = pd.DataFrame.from_csv('stances.csv')
-    bodies = pd.DataFrame.from_csv('bodies.csv')
-    #stances['detectedLang'] = stances.apply(lambda row: detect(row['Headline']), axis=1)
-    #bodies['detectedLang'] = bodies.apply(lambda row: detect(row['articleBody']), axis=1)
-
-# This class is needed to break out the complaint column in the estimation pipeline that comes later
-class ItemSelector(BaseEstimator, TransformerMixin):
-    """For data grouped by feature, select subset of data at a provided key.
-    The data is expected to be stored in a 2D data structure, where the first
-    index is over features and the second is over samples. 
-    """
-    def __init__(self, key):
-        self.key = key
-    def fit(self, x, y=None):
-        return self
-    def transform(self, data_dict):
-        return data_dict[self.key]
-
-class CosineSimilarityData(BaseEstimator, TransformerMixin):
-    """Extract all features from each document for DictVectorizer"""
-    def fit(self, x, y=None):
-        return self
-    def transform(self, cosSims):
-        return [{'cosineSimilarity': cosSim} for cosSim in cosSims]
-        #return df['cosineSimilarity'].tolist()
-        #return [{'cosineSimilarity': cosSim} for cosSim in cosSims]
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#if 'new' in sys.argv:
+#    print('NEW')
+#
+#else:
+#    stances = pd.DataFrame.from_csv('stances.csv')
+#    bodies = pd.DataFrame.from_csv('bodies.csv')
+#    #stances['detectedLang'] = stances.apply(lambda row: detect(row['Headline']), axis=1)
+#
+## This class is needed to break out the complaint column in the estimation pipeline that comes later
+#class ItemSelector(BaseEstimator, TransformerMixin):
+#    """For data grouped by feature, select subset of data at a provided key.
+#    The data is expected to be stored in a 2D data structure, where the first
+#    index is over features and the second is over samples. 
+#    """
+#    def __init__(self, key):
+#        self.key = key
 #    def fit(self, x, y=None):
 #        return self
-#    def transform(self, cosSims):
-#        #return cosSims
-
-class TwoColumnData(BaseEstimator, TransformerMixin):
-    def fit(self, x, y=None):
-        return self
-    def transform(self, cosSims):
-        return [{'cosineSimilarity': cosSim} for cosSim in cosSims]
-
-class QuestionMarkAndNegData(BaseEstimator, TransformerMixin):
-    """Extract all features from each document for DictVectorizer"""
-    def countNeg(self, hlstring, bdstring):
-        hlres = hlstring.count("n\'t")
-        hltokens = hlstring.split()
-        hltokens2 = [t for t in hltokens if (t == 'not' or t == 'cannot')]
-        hlres += len(hltokens2)
-        bdres = bdstring.count("n\'t")
-        bdtokens = bdstring.split()
-        bdtokens2 = [t for t in bdtokens if (t == 'not' or t == 'cannot')]
-        bdres += len(bdtokens2)
-#bool
-        hlboolres = "n\'t" in hlstring
-        hlbooltokens = hlstring.split()
-        hlbooltokens2 = [t for t in hlbooltokens if (t == 'not' or t == 'cannot')]
-        hlboolres = hlboolres or (len(hlbooltokens2) > 0)
-        bdboolres = "n\'t" in bdstring
-        bdbooltokens = bdstring.split()
-        bdbooltokens2 = [t for t in bdbooltokens if (t == 'not' or t == 'cannot')]
-        bdboolres = bdboolres or (len(bdbooltokens2) > 0)
-        return {'hl_question_mark_count': hlstring.count("?"),
-                    'hl_question_mark_bool': "?" in hlstring,
-                    'hl_neg_count': hlres,
-                    'hl_neg_bool': hlboolres,
-                    'bd_question_mark_bool': "?" in bdstring,
-                    'bd_neg_count': bdres,
-                    'bd_neg_bool': bdboolres,
-                    'abs_count_diff': abs(hlres-bdres),
-                    'abs_bool_diff': abs(hlboolres-bdboolres)
-                }
-    def fit(self, df, y=None):
-        return self
-
-    def transform(self, df):
-        #scaler = MinMaxScaler()
-        res =  df.apply(lambda row: self.countNeg(row['Headline'],row['articleBody']), axis=1)
-        #foo = scaler.fit_transform(np.array([x['hl_question_mark_count'] for x in res]).reshape(-1,1))
-        return(res)
-
-
-#    def boolNeg(self, hlstring):
-#        hlres = "n\'t" in hlstring
+#    def transform(self, data_dict):
+#        return data_dict[self.key]
+#
+#
+#class QuestionMarkAndNegData(BaseEstimator, TransformerMixin):
+#    """Extract all features from each document for DictVectorizer"""
+#    def countNeg(self, hlstring, bdstring):
+#        hlres = hlstring.count("n\'t")
 #        hltokens = hlstring.split()
 #        hltokens2 = [t for t in hltokens if (t == 'not' or t == 'cannot')]
-#        hlres = hlres or (len(hltokens2) > 0)
-#        bdres = "n\'t" in bdstring
+#        hlres += len(hltokens2)
+#        bdres = bdstring.count("n\'t")
 #        bdtokens = bdstring.split()
 #        bdtokens2 = [t for t in bdtokens if (t == 'not' or t == 'cannot')]
-#        bdres = bdres or (len(bdtokens2) > 0)
-#        return [hlres,bdres,abs(hlres-bdres)]
+#        bdres += len(bdtokens2)
+##bool
+#        hlboolres = "n\'t" in hlstring
+#        hlbooltokens = hlstring.split()
+#        hlbooltokens2 = [t for t in hlbooltokens if (t == 'not' or t == 'cannot')]
+#        hlboolres = hlboolres or (len(hlbooltokens2) > 0)
+#        bdboolres = "n\'t" in bdstring
+#        bdbooltokens = bdstring.split()
+#        bdbooltokens2 = [t for t in bdbooltokens if (t == 'not' or t == 'cannot')]
+#        bdboolres = bdboolres or (len(bdbooltokens2) > 0)
+#        return {'hl_question_mark_count': hlstring.count("?"),
+#                    'hl_question_mark_bool': "?" in hlstring,
+#                    'hl_neg_count': hlres,
+#                    'hl_neg_bool': hlboolres,
+#                    'bd_question_mark_bool': "?" in bdstring,
+#                    'bd_neg_count': bdres,
+#                    'bd_neg_bool': bdboolres,
+#                    'abs_count_diff': hlres-bdres,
+#                    'abs_bool_diff': hlboolres-bdboolres
+#                }
+#    def fit(self, df, y=None):
+#        return self
+#
 #    def transform(self, df):
-#        hl = df['Headline']
-#        bd = df['articleBody']
-#        return [
-#                {
-#                    'question_mark_count': string.count("?"),
-#                    'question_mark_bool': "?" in string,
-#                    'neg_count': self.countNeg(string),
-#                    'neg_bool': self.boolNeg(string)
-#                    } for string in strings
-#                ]
-# custom tokenizer to process text strings
-#class StemTokenizer(object):
-#    def __init__(self):
-#        self.stemmer = PorterStemmer()
-#    def stem_tokens(self, tokens, stemmer):
-#        stemmed = []
-#        for item in tokens:
-#            stemmed.append(stemmer.stem(item))
-#        return stemmed
-#    def tokenize(self, text):
-#        lowercase_text = text.lower()
-#        tokens = word_tokenize(lowercase_text)
-#        filtered = [w for w in tokens if not w in stopwords.words('english')]
-#        return filtered
-#    def tokenize_and_stem(self, text):
-#        tokens = self.tokenize(text)
-#        if tokens is None:
-#            print("\ntokens is none\n" + text)
-#        stems = self.stem_tokens(tokens, self.stemmer)
-#        return stems
-#    def __call__(self, doc):
-#        return self.tokenize_and_stem(doc)
-
-# custom tokenizer to process text strings
-class LemmaTokenizer(object):
-    def __init__(self):
-        self.lemmatizer = WordNetLemmatizer()
-    def stem_tokens(self, tokens, lemmatizer):
-        lemmatized = []
-        for item in tokens:
-            lemmatized.append(lemmatizer.lemmatize(item))
-        return lemmatized
-    def tokenize(self, text):
-        lowercase_text = text.lower()
-        tokens = word_tokenize(lowercase_text)
-        filtered = [w for w in tokens if not w in stopwords.words('english')]
-        return filtered
-    def tokenize_and_lemmatize(self, text):
-        tokens = self.tokenize(text)
-        if tokens is None:
-            print("\ntokens is none\n" + text)
-        stems = self.stem_tokens(tokens, self.lemmatizer)
-        return stems
-    def __call__(self, doc):
-        return self.tokenize_and_lemmatize(doc)
-
-classifier = Pipeline([
-    # Combining complaint text features, date features, zip_code features, and state
-    ('union', FeatureUnion(
-        transformer_list=[
-            # Pipeline for standard bag-of-words TF-IDF stemmed model for body
-#            ('articleBodyBoW', Pipeline([
-#                ('selector', ItemSelector(key='articleBody')),
-#                ('tfidf', TfidfVectorizer(tokenizer=LemmaTokenizer())),
-#                # ('best', TruncatedSVD(n_components=150)),
-#            ])),
-#            ('HeadlineBoW', Pipeline([
-#                ('selector', ItemSelector(key='Headline')),
-#                ('tfidf', TfidfVectorizer(tokenizer=LemmaTokenizer())),
-#                # ('best', TruncatedSVD(n_components=150)),
-#            ])),
-            # Featurizes dates according to DateData's transform method
-            ('QuestionMarkAndNegData', Pipeline([
-                ('features', QuestionMarkAndNegData()),  # returns a list of dicts
-                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-                ('scaler', MaxAbsScaler())
-            ])),
-            ('cosineSimilarity', Pipeline([
-                ('selector', ItemSelector(key='cosineSimilarity')),
-                ('features', CosineSimilarityData()),  # returns a list of dicts
-                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-                ('scaler', MaxAbsScaler())
-            ]))
-        ],
-    )),
-    # Use logistic regression
-    ('classifier', LogisticRegression(C=0.1,class_weight='balanced'))
-    #('classifier', SVC(C=1.0,class_weight='balanced'))
-])
-# Rewrote the above pipleline since I was only using the "complaint" features in the final model
+#        #scaler = MinMaxScaler()
+#        res =  df.apply(lambda row: self.countNeg(row['Headline'],row['articleBody']), axis=1)
+#        #foo = scaler.fit_transform(np.array([x['hl_question_mark_count'] for x in res]).reshape(-1,1))
+#        return(res)
+#
+#refuting_words = [
+#        'fake',
+#        'fraud',
+#        'hoax',
+#        'false',
+#        'deny', 'denies',
+#        # 'refute',
+#        'not',
+#        'despite',
+#        'nope',
+#        'doubt', 'doubts',
+#        'bogus',
+#        'debunk',
+#        'pranks',
+#        'retract'
+#    ]
+#
+#discuss_words = [
+#        'allege', 'alleges', 'alleged', 'allegedly',
+#        'reportedly','reports','reported',
+#        'apparently', 'appears',
+#        'suggests',
+#        'seemingly', 'seems',
+#        'claims', 'claimed', 'claiming',
+#        'accuses', 'accused', 'accusation'
+#    ]
+#
+#class DiscussWordData(BaseEstimator, TransformerMixin):
+#    """Extract all features from each document for DictVectorizer"""
+#    def countNeg(self, hlstring, bdstring):
+#        hltokens = hlstring.split()
+#        hltokens2 = [t for t in hltokens if t in discuss_words]
+#        hlres = len(hltokens2)
+#        bdtokens = bdstring.split()
+#        bdtokens2 = [t for t in bdtokens if t in discuss_words]
+#        bdres = len(bdtokens2)
+##bool
+#        hlbooltokens = hlstring.split()
+#        hlbooltokens2 = [t for t in hlbooltokens if t in discuss_words]
+#        hlboolres = len(hlbooltokens2) > 0
+#        bdbooltokens = bdstring.split()
+#        bdbooltokens2 = [t for t in bdbooltokens if (t == 'not' or t == 'cannot')]
+#        bdboolres = len(bdbooltokens2) > 0
+#        return {
+#                    'dhl_neg_count': hlres,
+#                    'dhl_neg_bool': hlboolres,
+#                    'dbd_neg_count': bdres,
+#                    'dbd_neg_bool': bdboolres,
+#                    'dabs_count_diff': hlres-bdres,
+#                    'dabs_bool_diff': hlboolres-bdboolres
+#                }
+#    def fit(self, df, y=None):
+#        return self
+#
+#    def transform(self, df):
+#        res =  df.apply(lambda row: self.countNeg(row['Headline'],row['articleBody']), axis=1)
+#        return(res)
+#
+#class RefutingWordData(BaseEstimator, TransformerMixin):
+#    """Extract all features from each document for DictVectorizer"""
+#    def countNeg(self, hlstring, bdstring):
+#        hltokens = hlstring.split()
+#        hltokens2 = [t for t in hltokens if t in refuting_words]
+#        hlres = len(hltokens2)
+#        bdtokens = bdstring.split()
+#        bdtokens2 = [t for t in bdtokens if t in refuting_words]
+#        bdres = len(bdtokens2)
+##bool
+#        hlbooltokens = hlstring.split()
+#        hlbooltokens2 = [t for t in hlbooltokens if t in refuting_words]
+#        hlboolres = len(hlbooltokens2) > 0
+#        bdbooltokens = bdstring.split()
+#        bdbooltokens2 = [t for t in bdbooltokens if (t == 'not' or t == 'cannot')]
+#        bdboolres = len(bdbooltokens2) > 0
+#        return {
+#                    'rhl_neg_count': hlres,
+#                    'rhl_neg_bool': hlboolres,
+#                    'rbd_neg_count': bdres,
+#                    'rbd_neg_bool': bdboolres,
+#                    'rabs_count_diff': hlres-bdres,
+#                    'rabs_bool_diff': hlboolres-bdboolres
+#                }
+#    def fit(self, df, y=None):
+#        return self
+#
+#    def transform(self, df):
+#        res =  df.apply(lambda row: self.countNeg(row['Headline'],row['articleBody']), axis=1)
+#        return(res)
+#
+#
+##    def boolNeg(self, hlstring):
+##        hlres = "n\'t" in hlstring
+##        hltokens = hlstring.split()
+##        hltokens2 = [t for t in hltokens if (t == 'not' or t == 'cannot')]
+##        hlres = hlres or (len(hltokens2) > 0)
+##        bdres = "n\'t" in bdstring
+##        bdtokens = bdstring.split()
+##        bdtokens2 = [t for t in bdtokens if (t == 'not' or t == 'cannot')]
+##        bdres = bdres or (len(bdtokens2) > 0)
+##        return [hlres,bdres,abs(hlres-bdres)]
+##    def transform(self, df):
+##        hl = df['Headline']
+##        bd = df['articleBody']
+##        return [
+##                {
+##                    'question_mark_count': string.count("?"),
+##                    'question_mark_bool': "?" in string,
+##                    'neg_count': self.countNeg(string),
+##                    'neg_bool': self.boolNeg(string)
+##                    } for string in strings
+##                ]
+## custom tokenizer to process text strings
+##class StemTokenizer(object):
+##    def __init__(self):
+##        self.stemmer = PorterStemmer()
+##    def stem_tokens(self, tokens, stemmer):
+##        stemmed = []
+##        for item in tokens:
+##            stemmed.append(stemmer.stem(item))
+##        return stemmed
+##    def tokenize(self, text):
+##        lowercase_text = text.lower()
+##        tokens = word_tokenize(lowercase_text)
+##        filtered = [w for w in tokens if not w in stopwords.words('english')]
+##        return filtered
+##    def tokenize_and_stem(self, text):
+##        tokens = self.tokenize(text)
+##        if tokens is None:
+##            print("\ntokens is none\n" + text)
+##        stems = self.stem_tokens(tokens, self.stemmer)
+##        return stems
+##    def __call__(self, doc):
+##        return self.tokenize_and_stem(doc)
+#
+## custom tokenizer to process text strings
+#
 #classifier = Pipeline([
-#    ('column_selector', ItemSelector(key='complaint')),
-#    ('vectorizer', TfidfVectorizer(tokenizer=StemTokenizer())),
-#    ('classifier', LogisticRegression(C=5.0))
-#    ])
-
-[training_and_dev_set_stance, test_set_stance] = splitIntoSets(stances, 0.15)
-[training_set_stance, dev_set_stance] = splitIntoSets(training_and_dev_set_stance, 0.15) 
-
-training_on = training_set_stance
-testing_on = dev_set_stance
-if "real-test" in sys.argv:
-    training_on = training_and_dev_set_stance
-    testing_on = test_set_stance
-
-#if "competition-test" in sys.argv:
-
-training_set = pd.merge(training_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
-test_set = pd.merge(testing_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
-
-## just unrelated vs related ******************* !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-#training_set['Stance'] = training_set.apply(lambda row: 'unrelated' if row['Stance'] == 'unrelated' else 'related', axis=1)
-#test_set['Stance'] = test_set.apply(lambda row: 'unrelated' if row['Stance'] == 'unrelated' else 'related', axis=1)
-## ******************* !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-classifier.fit(training_set.drop('Stance', axis = 1), training_set['Stance'])
-
-# uncomment the following if testing on dev set
-print("getting predicted labels...")
-yhat = classifier.predict(test_set)
-print(classification_report(test_set['Stance'], yhat))
-print(accuracy_score(test_set['Stance'], yhat))
-
-now = datetime.now()
-date_parts = [str(x) for x in [now.month,now.day,now.year]]
-time_parts = [str(x) for x in [now.hour,now.minute,now.second]]
-now_str = "-".join(date_parts) + "_" + "-".join(time_parts)
-
-joblib.dump(classifier, 'classifiers/classifier' + now_str + '.pkl')
+#    # Combining complaint text features, date features, zip_code features, and state
+#    ('union', FeatureUnion(
+#        transformer_list=[
+#            # Pipeline for standard bag-of-words TF-IDF stemmed model for body
+##            ('articleBodyBoW', Pipeline([
+##                ('selector', ItemSelector(key='articleBody')),
+##                ('tfidf', TfidfVectorizer(tokenizer=LemmaTokenizer())),
+##                # ('best', TruncatedSVD(n_components=150)),
+##            ])),
+##            ('HeadlineBoW', Pipeline([
+##                ('selector', ItemSelector(key='Headline')),
+##                ('tfidf', TfidfVectorizer(tokenizer=LemmaTokenizer())),
+##                # ('best', TruncatedSVD(n_components=150)),
+##            ])),
+#            # Featurizes dates according to DateData's transform method
+#            ('DiscussWordData', Pipeline([
+#                ('features', DiscussWordData()),  # returns a list of dicts
+#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+#                ('scaler', MaxAbsScaler())
+#            ])),
+#            ('RefutingWordData', Pipeline([
+#                ('features', RefutingWordData()),  # returns a list of dicts
+#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+#                ('scaler', MaxAbsScaler())
+#            ])),
+#            ('QuestionMarkAndNegData', Pipeline([
+#                ('features', QuestionMarkAndNegData()),  # returns a list of dicts
+#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+#                ('scaler', MaxAbsScaler())
+#            ])),
+##            ('cosineSimilarity', Pipeline([
+##                ('selector', ItemSelector(key='cosineSimilarity')),
+##                ('features', CosineSimilarityData()),  # returns a list of dicts
+##                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+##                ('scaler', MaxAbsScaler())
+##            ]))
+#            ('cosineSimilarity', Pipeline([
+#                ('features', CosineSimilarityData()),  # returns a list of dicts
+#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+#                ('scaler', MaxAbsScaler())
+#            ]))
+#        ],
+#    )),
+#    # Use logistic regression
+#    ('classifier', LogisticRegression(C=0.1,class_weight='balanced'))
+#    #('classifier', SVC(C=1.0,class_weight='balanced'))
+#])
+## Rewrote the above pipleline since I was only using the "complaint" features in the final model
+##classifier = Pipeline([
+##    ('column_selector', ItemSelector(key='complaint')),
+##    ('vectorizer', TfidfVectorizer(tokenizer=StemTokenizer())),
+##    ('classifier', LogisticRegression(C=5.0))
+##    ])
+#
+#[training_and_dev_set_stance, test_set_stance] = splitIntoSets(stances, 0.15)
+#[training_set_stance, dev_set_stance] = splitIntoSets(training_and_dev_set_stance, 0.15) 
+#
+#training_on = training_set_stance
+#testing_on = dev_set_stance
+#if "real-test" in sys.argv:
+#    training_on = training_and_dev_set_stance
+#    testing_on = test_set_stance
+#
+##if "competition-test" in sys.argv:
+#
+#training_set = pd.merge(training_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+#test_set = pd.merge(testing_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+#
+### just unrelated vs related ******************* !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+##training_set['Stance'] = training_set.apply(lambda row: 'unrelated' if row['Stance'] == 'unrelated' else 'related', axis=1)
+##test_set['Stance'] = test_set.apply(lambda row: 'unrelated' if row['Stance'] == 'unrelated' else 'related', axis=1)
+### ******************* !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#
+#classifier.fit(training_set.drop('Stance', axis = 1), training_set['Stance'])
+#
+## uncomment the following if testing on dev set
+#print("getting predicted labels...")
+#yhat = classifier.predict(test_set)
+#print(classification_report(test_set['Stance'], yhat))
+#print(accuracy_score(test_set['Stance'], yhat))
+#
+##def plot_confusion_matrix(cm, classes,
+##                          normalize=False,
+##                          title='Confusion matrix',
+##                          cmap=plt.cm.Blues):
+##    """
+##    This function prints and plots the confusion matrix.
+##    Normalization can be applied by setting `normalize=True`.
+##    """
+##    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+##    plt.title(title)
+##    plt.colorbar()
+##    tick_marks = np.arange(len(classes))
+##    plt.xticks(tick_marks, classes, rotation=45)
+##    plt.yticks(tick_marks, classes)
+##    if normalize:
+##        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+##        print("Normalized confusion matrix")
+##    else:
+##        print('Confusion matrix, without normalization')
+##    print(cm)
+##    thresh = cm.max() / 2.
+##    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+##        plt.text(j, i, cm[i, j],
+##                 horizontalalignment="center",
+##                 color="white" if cm[i, j] > thresh else "black")
+##    plt.tight_layout()
+##    plt.ylabel('True label')
+##    plt.xlabel('Predicted label')
+### Compute confusion matrix
+##cnf_matrix = confusion_matrix(test_set['Stance'], yhat)
+##np.set_printoptions(precision=2)
+### Plot non-normalized confusion matrix
+##plt.figure()
+##plot_confusion_matrix(cnf_matrix, classes=class_names,
+##                      title='Confusion matrix, without normalization')
+### Plot normalized confusion matrix
+##plt.figure()
+##plot_confusion_matrix(cnf_matrix, classes=class_names, normalize=True,
+##                      title='Normalized confusion matrix')
+##plt.show()
+#print(report_score(test_set['Stance'], yhat))
+#
+#now = datetime.now()
+#date_parts = [str(x) for x in [now.month,now.day,now.year]]
+#time_parts = [str(x) for x in [now.hour,now.minute,now.second]]
+#now_str = "-".join(date_parts) + "_" + "-".join(time_parts)
+#
+#joblib.dump(classifier, 'classifiers/classifier' + now_str + '.pkl')
