@@ -39,7 +39,22 @@ def getWordMoversDistance(vectors, text1string, text2string):
 #        distance = 
     return distance
 
-#def getNegatedWord
+def getNegatedWords(text, nlp):
+    output = nlp.annotate(
+            text, properties={
+                'annotators': 'depparse','outputFormat': 'json'
+                }
+            )
+    try:
+        sentence_data = output['sentences'][0]
+        dep_parse = sentence_data['basicDependencies']
+        negated = []
+        for dikt in dep_parse:
+            if dikt['dep']=='neg':
+                negated.append(dikt['governorGloss'])
+        return(" ".join(negated))
+    except:
+        return("")
 
 
 
