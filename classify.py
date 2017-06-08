@@ -23,25 +23,25 @@ from sklearn.linear_model import LogisticRegression
 #from sklearn.svm import LinearSVC
 
 #read into DFs the  article body file and stance/headline file
-#if os.path.isfile('train/train_bodies.csv'):
-#    body_file = 'train/train_bodies.csv'
-#else:
-#    body_file = 'train/orig_train_bodies.csv'
-#
-#if os.path.isfile('train/train_stances.csv'):
-#    stance_file = 'train/train_stances.csv'
-#else:
-#    stance_file = 'train/orig_train_stances.csv'
+if os.path.isfile('train/train_bodies.csv'):
+    body_file = 'train/train_bodies.csv'
+else:
+    body_file = 'train/orig_train_bodies.csv'
 
-body_file = 'train/orig_train_bodies.csv'
-stance_file = 'train/orig_train_stances.csv'
+if os.path.isfile('train/train_stances.csv'):
+    stance_file = 'train/train_stances.csv'
+else:
+    stance_file = 'train/orig_train_stances.csv'
+
+#body_file = 'train/orig_train_bodies.csv'
+#stance_file = 'train/orig_train_stances.csv'
 
 w_body_file = 'train/train_bodies.csv' 
 w_stance_file = 'train/train_stances.csv' 
 
 #print(" ************ REMOVE INDEXING FOR REAL RUN *************")
-bodies = pd.DataFrame.from_csv(body_file)
-stances = pd.DataFrame.from_csv(stance_file, index_col=None)
+bodies = pd.read_csv(body_file)
+stances = pd.read_csv(stance_file, index_col=None)
 #bodies = pd.read_csv(body_file, index_col='Body ID')
 #stances = pd.read_csv(stance_file, index_col=None)
 all_data = pd.merge(stances, bodies, how='inner', left_on='Body ID', right_index=True, suffixes=('_x', '_y'), copy=True, indicator=False)
@@ -52,39 +52,41 @@ stancecols = list(stances)
 print('len bodies ' + str(len(bodies)))
 print('len stances ' + str(len(stances)))
 
-#if 'bodyLang' not in bodycols:
-#    print('Using langdetect to detect language of body')
-#    from langdetect import DetectorFactory, detect
-#    DetectorFactory.seed = 0
-#    bodies['bodyLang'] = bodies.apply(lambda row: detect(row['articleBody']), axis=1)
-#    bodies.to_csv(w_body_file)
+#stances.to_csv('train/stancesX.csv', index=False)
+
+if 'bodyLang' not in bodycols:
+    print('Using langdetect to detect language of body')
+    from langdetect import DetectorFactory, detect
+    DetectorFactory.seed = 0
+    bodies['bodyLang'] = bodies.apply(lambda row: detect(row['articleBody']), axis=1)
+    bodies.to_csv(w_body_file)
 #
-#if 'tr_body' in sys.argv:
-#    print('Using Google Translate to translate body')
-#    bodies['articleBody'] = bodies['articleBody']
-#    from googletrans import Translator
-#    translator = Translator()
-#    import csv
-#    import time
-#    with open('test.csv', 'w') as f:
-#        writer = csv.writer(f)
-#        writer.writerow(['Body ID','articleBody'])
-#        for i in bodies.index:
-#            if bodies.loc[i,'bodyLang'] != 'en':
-#                done = 0
-#                while not done:
-#                    try:
-#                        t = translator.translate(bodies.loc[i,'articleBody'])
-#                        #print('\n#!#\n#!#\n#!#\n' + t.text)
-#                        writer.writerow([i,t.text])
-#                        bodies.loc[i,'articleBody'] = t.text
-#                        done = 1
-#                    except: 
-#                        time.sleep(5)
-#                        print('waiting 5 seconds, then trying again...')
-#            else:
-#                pass
-#    bodies.to_csv(w_body_file)
+if 'tr_body' in sys.argv:
+    print('Using Google Translate to translate body')
+    bodies['articleBody'] = bodies['articleBody']
+    from googletrans import Translator
+    translator = Translator()
+    import csv
+    import time
+    with open('test.csv', 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Body ID','articleBody'])
+        for i in bodies.index:
+            if bodies.loc[i,'bodyLang'] != 'en':
+                done = 0
+                while not done:
+                    try:
+                        t = translator.translate(bodies.loc[i,'articleBody'])
+                        #print('\n#!#\n#!#\n#!#\n' + t.text)
+                        writer.writerow([i,t.text])
+                        bodies.loc[i,'articleBody'] = t.text
+                        done = 1
+                    except: 
+                        time.sleep(5)
+                        print('waiting 5 seconds, then trying again...')
+            else:
+                pass
+    bodies.to_csv(w_body_file)
 #
 #if 'headline_translated' not in stancecols:
 #    print('Using Google Translate to translate headline')
