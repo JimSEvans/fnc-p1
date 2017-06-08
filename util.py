@@ -1,10 +1,12 @@
+import string
 from nltk.stem import WordNetLemmatizer
-from nltk import word_tokenize  
+from nltk import sent_tokenize, word_tokenize
 from nltk.corpus import stopwords
 
 class LemmaTokenizer(object):
     def __init__(self):
         self.lemmatizer = WordNetLemmatizer()
+        self.mystopwords = stopwords.words('english') + ['n\'t','wo']
     def stem_tokens(self, tokens, lemmatizer):
         lemmatized = []
         for item in tokens:
@@ -13,7 +15,7 @@ class LemmaTokenizer(object):
     def tokenize(self, text):
         lowercase_text = text.lower()
         tokens = word_tokenize(lowercase_text)
-        filtered = [w for w in tokens if not w in stopwords.words('english')]
+        filtered = [w for w in tokens if (w not in self.mystopwords and w[0] not in list(string.punctuation))]
         return filtered
     def tokenize_and_lemmatize(self, text):
         tokens = self.tokenize(text)
@@ -24,9 +26,6 @@ class LemmaTokenizer(object):
     def __call__(self, doc):
         return self.tokenize_and_lemmatize(doc)
 
-def getCosineSimilarity(vectorizer, text1, text2):
-    tfidf = vectorizer.fit_transform([text1, text2])
-    return round(((tfidf * tfidf.T).A)[0,1], 4)
 
 def getWordMoversDistance(vectors, text1string, text2string):
     text1 = text1string.lower().split()

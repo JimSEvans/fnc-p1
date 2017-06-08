@@ -1,7 +1,9 @@
+#df.merge(df.apply(lambda row: pd.Series({'c':row['a'] + row['b'], 'd':row['a']**2*row['b']}), axis = 1), left_index=True, right_index=True)
 # 22563.250 was the top score
 # This is a multi-class classification task. It is part 1 of the Fake News Challenge.
 import util
 import sys
+import os.path
 import numpy as np
 import pandas as pd
 from gensim.models import KeyedVectors
@@ -19,73 +21,139 @@ from sklearn.svm import SVC
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.linear_model import LogisticRegression
 #from sklearn.svm import LinearSVC
-#random.seed(1)
 
-bodies = pd.DataFrame.from_csv("train/train_bodies.csv")
-stances = pd.DataFrame.from_csv("train/train_stances.csv", index_col=None)
-all_data = pd.merge(stances, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+#read into DFs the  article body file and stance/headline file
+#if os.path.isfile('train/train_bodies.csv'):
+#    body_file = 'train/train_bodies.csv'
+#else:
+#    body_file = 'train/orig_train_bodies.csv'
+#
+#if os.path.isfile('train/train_stances.csv'):
+#    stance_file = 'train/train_stances.csv'
+#else:
+#    stance_file = 'train/orig_train_stances.csv'
+
+body_file = 'train/orig_train_bodies.csv'
+stance_file = 'train/orig_train_stances.csv'
+
+w_body_file = 'train/train_bodies.csv' 
+w_stance_file = 'train/train_stances.csv' 
+
+#print(" ************ REMOVE INDEXING FOR REAL RUN *************")
+bodies = pd.DataFrame.from_csv(body_file)
+stances = pd.DataFrame.from_csv(stance_file, index_col=None)
+#bodies = pd.read_csv(body_file, index_col='Body ID')
+#stances = pd.read_csv(stance_file, index_col=None)
+all_data = pd.merge(stances, bodies, how='inner', left_on='Body ID', right_index=True, suffixes=('_x', '_y'), copy=True, indicator=False)
 
 bodycols = list(bodies)
 stancecols = list(stances)
 
-if 'bodyLangLo' not in bodycols:
-    print('Using langdetect to detect language of body')
-# use langdetect library to guess the languages of each article body
-    from langdetect import DetectorFactory, detect
-    DetectorFactory.seed = 0
-    bodies['bodyLangLo'] = bodies.apply(lambda row: detect(row['articleBody']), axis=1)
-    bodies.to_csv('train/train_bodies.csv')
+print('len bodies ' + str(len(bodies)))
+print('len stances ' + str(len(stances)))
 
-if 'body' not in stancecols:
-    print('Using Google Translate to translate body')
-    bodies['body'] = bodies['articleBody']
-    from googletrans import Translator
-    translator = Translator()
-#    bodies['body'] = bodies.articleBody.apply(lambda x: translator.translate(x).text) 
-    ##body_list = [b[:250] for b in bodies['articleBody']]
-    #translation_objs = translator.translate(list(bodies['articleBody']))
-    #translations = [t.text for t in translation_objs]
-    #srcs = [t.src for t in translation_objs]
-    #bodies['body'] = translations
-    #bodies['src'] = srcs
-    #bodies.to_csv('train/train_bodies.csv')
-    #bodies.apply(lambda row: detect(row['articleBody']), axis=1)
-    import csv
-    import time
-    with open('test.csv', 'w') as f:
-        writer = csv.writer(f)
-        writer.writerow(['Body ID','body'])
-        for i in bodies.index:
-            if bodies.loc[i,'bodyLangLo'] != 'en':
-                done = 0
-                while not done:
-                    try:
-                        t = translator.translate(bodies.loc[i,'articleBody'])
-                        #print('\n#!#\n#!#\n#!#\n' + t.text)
-                        writer.writerow([i,t.text])
-                        bodies.loc[i,'body'] = t.text
-                        done = 1
-                    except: 
-                        time.sleep(5)
-                        print('waiting 5 seconds, then trying again...')
-            else:
-                pass
-
-#df.merge(df.apply(lambda row: pd.Series({'c':row['a'] + row['b'], 'd':row['a']**2*row['b']}), axis = 1), left_index=True, right_index=True)
-# TRANSLATION COLUMN
-
+#if 'bodyLang' not in bodycols:
+#    print('Using langdetect to detect language of body')
+#    from langdetect import DetectorFactory, detect
+#    DetectorFactory.seed = 0
+#    bodies['bodyLang'] = bodies.apply(lambda row: detect(row['articleBody']), axis=1)
+#    bodies.to_csv(w_body_file)
+#
+#if 'tr_body' in sys.argv:
+#    print('Using Google Translate to translate body')
+#    bodies['articleBody'] = bodies['articleBody']
+#    from googletrans import Translator
+#    translator = Translator()
+#    import csv
+#    import time
+#    with open('test.csv', 'w') as f:
+#        writer = csv.writer(f)
+#        writer.writerow(['Body ID','articleBody'])
+#        for i in bodies.index:
+#            if bodies.loc[i,'bodyLang'] != 'en':
+#                done = 0
+#                while not done:
+#                    try:
+#                        t = translator.translate(bodies.loc[i,'articleBody'])
+#                        #print('\n#!#\n#!#\n#!#\n' + t.text)
+#                        writer.writerow([i,t.text])
+#                        bodies.loc[i,'articleBody'] = t.text
+#                        done = 1
+#                    except: 
+#                        time.sleep(5)
+#                        print('waiting 5 seconds, then trying again...')
+#            else:
+#                pass
+#    bodies.to_csv(w_body_file)
+#
+#if 'headline_translated' not in stancecols:
+#    print('Using Google Translate to translate headline')
+#    from googletrans import Translator
+#    translator = Translator()
+#    stances['headline_translated'] = stances['Headline']
+#    stances['headline_translated_from'] = None
+#    import csv
+#    import time
+#    with open('tr_headline.csv', 'w') as f:
+#        writer = csv.writer(f)
+#        writer.writerow(['Headline ID','Headline', 'srclang'])
+#        for i in stances.index:
+#            #if bodies.loc[i,'headlineLangLo'] != 'en':
+#            done = 0
+#            while not done:
+#                try:
+#                    t = translator.translate(stances.loc[i,'Headline'])
+#                    #print('\n#!#\n#!#\n#!#\n' + t.text)
+#                    writer.writerow([i,t.text,t.src])
+#                    stances.loc[i,'headline_translated'] = t.text
+#                    stances.loc[i,'headline_translated_from'] = t.src
+#                    done = 1
+#                except: 
+#                    time.sleep(5)
+#                    print('waiting 5 seconds, then trying again...')
+#    stances.to_csv(w_stance_file, index=False)
+#
 if 'cosine' not in stancecols:
     print('Getting cosine similarity between articles their headlines.')
     vectorizer = TfidfVectorizer(tokenizer=util.LemmaTokenizer())
-    stances['cosine'] = all_data.apply(lambda row: util.getCosineSimilarity(vectorizer, row['articleBody'], row['Headline']), axis=1)
-    stances.to_csv("train/train_stances.csv")
+    def getCosineSimilarity(text1, text2):
+        tfidf = vectorizer.fit_transform([text1, text2])
+        res = round(((tfidf * tfidf.T).A)[0,1], 5)
+        print(res)
+        return res 
+
+    stances['cosine'] = all_data.apply(lambda row: getCosineSimilarity(row['articleBody'], row['Headline']),axis=1)
+    stances.to_csv(w_stance_file, index=False)
 
 
-if 'WMD' not in stancecols:
-    print('Computing word mover\'s distance.')
-    vectors = KeyedVectors.load_word2vec_format("data/GoogleNews-vectors-negative300.bin.gz", binary=True)
-    stances['WMD'] = all_data.apply(lambda row: util.getWordMoversDistance(vectors, row['articleBody'], row['Headline']), axis=1)
-    stances.to_csv("train/train_stances.csv")
+
+#if 'cosine' not in stancecols:
+#    print('Getting cosine similarity between articles their headlines.')
+#    vectorizer = TfidfVectorizer(tokenizer=util.LemmaTokenizer())
+#    def getCosineSimilarity(text1, text2):
+#        tfidf = vectorizer.fit_transform([text1, text2])
+#        return round(((tfidf * tfidf.T).A)[0,1], 4)
+#    foo = all_data.apply(lambda row: getCosineSimilarity(row['articleBody'], row['Headline']),axis=1)
+#    #stances['cosine'] = all_data.apply(lambda row: util.getCosineSimilarity(vectorizer,row['articleBody'], row['headline_translated']), axis=1)
+#
+#    foo.to_csv(w_stance_file, index=False)
+
+
+
+
+
+#
+#
+#if 'WMD' not in stancecols:
+#    print('Computing word mover\'s distance.')
+#    vectors = KeyedVectors.load_word2vec_format(
+#            "data/GoogleNews-vectors-negative300.bin.gz", binary=True
+#            )
+#    stances['WMD'] = all_data.apply(
+#            lambda row: util.getWordMoversDistance(
+#                vectors, row['articleBody'], row['Headline']
+#                ), axis=1)
+#    stances.to_csv("train/train_stances.csv")
 
 #if 'negatedOfBody' not in stancecols:
 #    from pycorenlp import StanfordCoreNLP
