@@ -59,7 +59,7 @@ if 'bodyLang' not in bodycols:
     from langdetect import DetectorFactory, detect
     DetectorFactory.seed = 0
     bodies['bodyLang'] = bodies.apply(lambda row: detect(row['articleBody']), axis=1)
-    bodies.to_csv(w_body_file)
+    bodies.to_csv(w_body_file, index=False)
 #
 if 'tr_body' in sys.argv:
     print('Using Google Translate to translate body')
@@ -68,7 +68,7 @@ if 'tr_body' in sys.argv:
     translator = Translator()
     import csv
     import time
-    with open('test.csv', 'w') as f:
+    with open('transl_body.csv', 'w') as f:
         writer = csv.writer(f)
         writer.writerow(['Body ID','articleBody'])
         for i in bodies.index:
@@ -86,42 +86,41 @@ if 'tr_body' in sys.argv:
                         print('waiting 5 seconds, then trying again...')
             else:
                 pass
-    bodies.to_csv(w_body_file)
+    bodies.to_csv(w_body_file, index=False)
 #
-#if 'headline_translated' not in stancecols:
-#    print('Using Google Translate to translate headline')
-#    from googletrans import Translator
-#    translator = Translator()
-#    stances['headline_translated'] = stances['Headline']
-#    stances['headline_translated_from'] = None
-#    import csv
-#    import time
-#    with open('tr_headline.csv', 'w') as f:
-#        writer = csv.writer(f)
-#        writer.writerow(['Headline ID','Headline', 'srclang'])
-#        for i in stances.index:
-#            #if bodies.loc[i,'headlineLangLo'] != 'en':
-#            done = 0
-#            while not done:
-#                try:
-#                    t = translator.translate(stances.loc[i,'Headline'])
-#                    #print('\n#!#\n#!#\n#!#\n' + t.text)
-#                    writer.writerow([i,t.text,t.src])
-#                    stances.loc[i,'headline_translated'] = t.text
-#                    stances.loc[i,'headline_translated_from'] = t.src
-#                    done = 1
-#                except: 
-#                    time.sleep(5)
-#                    print('waiting 5 seconds, then trying again...')
-#    stances.to_csv(w_stance_file, index=False)
+if 'tr_headline' in sys.argv:
+    print('Using Google Translate to translate headline')
+    from googletrans import Translator
+    translator = Translator()
+    stances['headline_src_lang'] = None
+    import csv
+    import time
+    with open('transl_headline.csv', 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Headline ID','Headline', 'headline_src_lang'])
+        for i in list(stances.index):
+            #if bodies.loc[i,'headlineLangLo'] != 'en':
+            done = 0
+            while not done:
+                try:
+                    t = translator.translate(stances.loc[i,'Headline'])
+                    writer.writerow([i,t.text,t.src])
+                    stances.loc[i,'Headline'] = t.text
+                    stances.loc[i,'headline_src_lang'] = t.src
+                    done = 1
+                except: 
+                    time.sleep(5)
+                    print('waiting 5 seconds, then trying again...')
+    stances.to_csv(w_stance_file, index=False)
 #
-if 'cosine' not in stancecols:
+if True:
+#if 'cosine' not in stancecols:
     print('Getting cosine similarity between articles their headlines.')
     vectorizer = TfidfVectorizer(tokenizer=util.LemmaTokenizer())
     def getCosineSimilarity(text1, text2):
         tfidf = vectorizer.fit_transform([text1, text2])
         res = round(((tfidf * tfidf.T).A)[0,1], 5)
-        print(res)
+        #print(res)
         return res 
 
     stances['cosine'] = all_data.apply(lambda row: getCosineSimilarity(row['articleBody'], row['Headline']),axis=1)
