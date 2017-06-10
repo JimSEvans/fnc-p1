@@ -55,20 +55,20 @@ def getNegatedWords(text, nlp):
     except:
         return("")
 
-def getCosineSimilarity(text1, text2):
+def getCosineSimilarity(vectorizer, text1, text2):
     tfidf = vectorizer.fit_transform([text1, text2])
     res = round(((tfidf * tfidf.T).A)[0,1], 5)
     #print(res)
     return res 
 
-def getClosest(hl, b):
+def getClosest(vectors, vectorizer, hl, b):
     sentences = sent_tokenize(b)
-    cosSimilarities = [getCosineSimilarity(sent, hl) for sent in sentences]
-    WMDs = [getWMD(sent) for sent in sentences]
+    cosSimilarities = [getCosineSimilarity(vectorizer,sent, hl) for sent in sentences]
+    WMDs = [getWordMoversDistance(vectors, sent, hl) for sent in sentences]
     maxCosSim = max(cosSimilarities)
     minWMD = min(WMDs)
-    cosBest = cosSimilarities[cosSimilarities.index(maxCosSim)]
-    wmdBest = WMDs[WMDs.index(minWMD)]
+    cosBest = sentences[cosSimilarities.index(maxCosSim)]
+    wmdBest = sentences[WMDs.index(minWMD)]
     same = cosBest==wmdBest
     return {
             'closest_by_cos':cosBest, 

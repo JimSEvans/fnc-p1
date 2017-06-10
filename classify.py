@@ -40,11 +40,20 @@ w_body_file = 'train/train_bodies.csv'
 w_stance_file = 'train/train_stances.csv' 
 
 #print(" ************ REMOVE INDEXING FOR REAL RUN *************")
-bodies = pd.read_csv(body_file)
+bodies = pd.read_csv(body_file, index_col='Body ID')
 stances = pd.read_csv(stance_file, index_col=None)
 #bodies = pd.read_csv(body_file, index_col='Body ID')
 #stances = pd.read_csv(stance_file, index_col=None)
-all_data = pd.merge(stances, bodies, how='inner', left_on='Body ID', right_index=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+all_data = pd.merge(stances, bodies, how='inner', left_on='Body ID', right_index=True, suffixes=('_x', '_y'), indicator=True)
+
+def mkBodyCSV(dataframe):
+    dataframe.to_csv(w_body_file, index=True)
+
+def mkStanceCSV(dataframe):
+    dataframe.to_csv(w_stance_file, index=False)
+
+if len(all_data[all_data['_merge']!='both']) != 0:
+    print ("STOP ! ! ! ! !")
 
 bodycols = list(bodies)
 stancecols = list(stances)
@@ -52,14 +61,14 @@ stancecols = list(stances)
 print('len bodies ' + str(len(bodies)))
 print('len stances ' + str(len(stances)))
 
-#stances.to_csv('train/stancesX.csv', index=False)
 
 if 'bodyLang' not in bodycols:
     print('Using langdetect to detect language of body')
     from langdetect import DetectorFactory, detect
     DetectorFactory.seed = 0
     bodies['bodyLang'] = bodies.apply(lambda row: detect(row['articleBody']), axis=1)
-    bodies.to_csv(w_body_file, index=False)
+    mkBodyCSV(bodies)
+    #bodies.to_csv(w_body_file, index=True)
 #
 if 'tr_body' in sys.argv:
     print('Using Google Translate to translate body')
@@ -86,7 +95,8 @@ if 'tr_body' in sys.argv:
                         print('waiting 5 seconds, then trying again...')
             else:
                 pass
-    bodies.to_csv(w_body_file, index=False)
+    mkBodyCSV(bodies)
+    #bodies.to_csv(w_body_file, index=True)
 #
 if 'tr_headline' in sys.argv:
     print('Using Google Translate to translate headline')
@@ -111,7 +121,8 @@ if 'tr_headline' in sys.argv:
                 except: 
                     time.sleep(5)
                     print('waiting 5 seconds, then trying again...')
-    stances.to_csv(w_stance_file, index=False)
+    mkStanceCSV(stances)
+    #stances.to_csv(w_stance_file, index=False)
 #
 if 'cosine' not in stancecols:
     print('Getting cosine similarity between articles their headlines.')
@@ -123,8 +134,8 @@ if 'cosine' not in stancecols:
         return res 
 
     stances['cosine'] = all_data.apply(lambda row: getCosineSimilarity(row['articleBody'], row['Headline']),axis=1)
-    stances.to_csv(w_stance_file, index=False)
-
+    mkStanceCSV(stances)
+    #stances.to_csv(w_stance_file, index=False)
 
 
 if 'WMD' not in stancecols:
@@ -136,29 +147,40 @@ if 'WMD' not in stancecols:
             lambda row: util.getWordMoversDistance(
                 vectors, row['articleBody'], row['Headline']
                 ), axis=1)
-    stances.to_csv("train/train_stances.csv")
+    mkStanceCSV(stances)
+    #stances.to_csv("train/train_stances.csv")
 
 if 'negated_body' not in bodycols:
-    print('Getting negated words with Stanford CoreNLP')
+    print('Getting negated words from body with Stanford CoreNLP')
     from pycorenlp import StanfordCoreNLP
     # make sure you start the server in another tab/window first!
     my_nlp = StanfordCoreNLP('http://localhost:9000')
+    bodies['negated_body'] = bodies.apply(lambda row: util.getNegatedWords(row['articleBody'], my_nlp),axis=1)
+    mkBodyCSV(bodies)
+
+    #bodies.to_csv(w_body_file, index=True)
+
 #    all_data.merge(
 #            all_data.apply(lambda s: pd.Series({'feature1':s+1, 'feature2':s-1})), 
 #left_index=True, right_index=True
 #)
-    stances['negated_body'] = all_data.apply(lambda row: util.getNegatedWords(row['articleBody'], my_nlp), axis=1)
-
-    stances.to_csv("train/train_stances.csv")
 
 #    stances['negatedWMD'] = all_data.apply(lambda row: util.getWordMoversDistance(vectors, row['articleBody'], row['Headline']), axis=1) 
 
 if 'closest_sentence' not in stancecols:
-    all_data.merge(
-        all_data.apply(lambda r: pd.Series(util.getClosest(r['Headline'],r['articleBody']))),
+    print('Getting closest sentence to headline')
+    vectorizer = TfidfVectorizer(tokenizer=util.LemmaTokenizer())
+    vectors = KeyedVectors.load_word2vec_format(
+            "data/GoogleNews-vectors-negative300.bin.gz", binary=True
+            )
+    all_data2 = all_data.merge(
+            all_data.apply(lambda row: pd.Series(util.getClosest(vectors,vectorizer,row['Headline'],row['articleBody'])),axis=1),
         left_index=True, 
         right_index=True
     )
+    all_data2.to_csv('closest.csv', index=False)
+    stances.loc[:,'closest_by_cos':'closest_same'] = all_data2.loc[:,'closest_by_cos':'closest_same']
+    mkStancCSV(stances)
 
 # get cosine similarity / WMD between each sentence and the headline
 # choose the most similar sentence.
