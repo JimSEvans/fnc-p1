@@ -113,8 +113,7 @@ if 'tr_headline' in sys.argv:
                     print('waiting 5 seconds, then trying again...')
     stances.to_csv(w_stance_file, index=False)
 #
-if True:
-#if 'cosine' not in stancecols:
+if 'cosine' not in stancecols:
     print('Getting cosine similarity between articles their headlines.')
     vectorizer = TfidfVectorizer(tokenizer=util.LemmaTokenizer())
     def getCosineSimilarity(text1, text2):
@@ -128,56 +127,45 @@ if True:
 
 
 
-#if 'cosine' not in stancecols:
-#    print('Getting cosine similarity between articles their headlines.')
-#    vectorizer = TfidfVectorizer(tokenizer=util.LemmaTokenizer())
-#    def getCosineSimilarity(text1, text2):
-#        tfidf = vectorizer.fit_transform([text1, text2])
-#        return round(((tfidf * tfidf.T).A)[0,1], 4)
-#    foo = all_data.apply(lambda row: getCosineSimilarity(row['articleBody'], row['Headline']),axis=1)
-#    #stances['cosine'] = all_data.apply(lambda row: util.getCosineSimilarity(vectorizer,row['articleBody'], row['headline_translated']), axis=1)
-#
-#    foo.to_csv(w_stance_file, index=False)
+if 'WMD' not in stancecols:
+    print('Computing word mover\'s distance.')
+    vectors = KeyedVectors.load_word2vec_format(
+            "data/GoogleNews-vectors-negative300.bin.gz", binary=True
+            )
+    stances['WMD'] = all_data.apply(
+            lambda row: util.getWordMoversDistance(
+                vectors, row['articleBody'], row['Headline']
+                ), axis=1)
+    stances.to_csv("train/train_stances.csv")
 
+if 'negated_body' not in bodycols:
+    print('Getting negated words with Stanford CoreNLP')
+    from pycorenlp import StanfordCoreNLP
+    # make sure you start the server in another tab/window first!
+    my_nlp = StanfordCoreNLP('http://localhost:9000')
+#    all_data.merge(
+#            all_data.apply(lambda s: pd.Series({'feature1':s+1, 'feature2':s-1})), 
+#left_index=True, right_index=True
+#)
+    stances['negated_body'] = all_data.apply(lambda row: util.getNegatedWords(row['articleBody'], my_nlp), axis=1)
 
-
-
-
-#
-#
-#if 'WMD' not in stancecols:
-#    print('Computing word mover\'s distance.')
-#    vectors = KeyedVectors.load_word2vec_format(
-#            "data/GoogleNews-vectors-negative300.bin.gz", binary=True
-#            )
-#    stances['WMD'] = all_data.apply(
-#            lambda row: util.getWordMoversDistance(
-#                vectors, row['articleBody'], row['Headline']
-#                ), axis=1)
-#    stances.to_csv("train/train_stances.csv")
-
-#if 'negatedOfBody' not in stancecols:
-#    from pycorenlp import StanfordCoreNLP
-#    # make sure you start the server in another tab/window first!
-#        my_nlp = StanfordCoreNLP('http://localhost:9000')
-#        all_data.merge(
-#                all_data.apply(lambda s: pd.Series({'feature1':s+1, 'feature2':s-1})), 
-#    left_index=True, right_index=True
-#    )
-#
-#        stances['negated'] = all_data.apply(lambda row: util.getNegatedWords(my_nlp, row['articleBody'], row['Headline']), axis=1)
+    stances.to_csv("train/train_stances.csv")
 
 #    stances['negatedWMD'] = all_data.apply(lambda row: util.getWordMoversDistance(vectors, row['articleBody'], row['Headline']), axis=1) 
-#
-#
-#if 'new' in sys.argv:
-#    print('NEW')
-#
-#else:
-#    stances = pd.DataFrame.from_csv('stances.csv')
-#    bodies = pd.DataFrame.from_csv('bodies.csv')
-#    #stances['detectedLang'] = stances.apply(lambda row: detect(row['Headline']), axis=1)
-#
+
+if 'closest_sentence' not in stancecols:
+    all_data.merge(
+        all_data.apply(lambda r: pd.Series(util.getClosest(r['Headline'],r['articleBody']))),
+        left_index=True, 
+        right_index=True
+    )
+
+# get cosine similarity / WMD between each sentence and the headline
+# choose the most similar sentence.
+# save sentence AND cosine AND WMD
+
+
+
 ## This class is needed to break out the complaint column in the estimation pipeline that comes later
 #class ItemSelector(BaseEstimator, TransformerMixin):
 #    """For data grouped by feature, select subset of data at a provided key.
