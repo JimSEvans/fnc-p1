@@ -1,6 +1,7 @@
 #df.merge(df.apply(lambda row: pd.Series({'c':row['a'] + row['b'], 'd':row['a']**2*row['b']}), axis = 1), left_index=True, right_index=True)
 # 22563.250 was the top score
 # This is a multi-class classification task. It is part 1 of the Fake News Challenge.
+import copy
 import util
 import sys
 import os.path
@@ -96,8 +97,7 @@ if 'tr_body' in sys.argv:
             else:
                 pass
     mkBodyCSV(bodies)
-    #bodies.to_csv(w_body_file, index=True)
-#
+
 if 'tr_headline' in sys.argv:
     print('Using Google Translate to translate headline')
     from googletrans import Translator
@@ -143,12 +143,26 @@ if 'WMD' not in stancecols:
     vectors = KeyedVectors.load_word2vec_format(
             "data/GoogleNews-vectors-negative300.bin.gz", binary=True
             )
+    vectors_normal = copy.deepcopy(vectors)
+    vectors_normal.init_sims(replace=True)
     stances['WMD'] = all_data.apply(
             lambda row: util.getWordMoversDistance(
                 vectors, row['articleBody'], row['Headline']
                 ), axis=1)
+    stances['WMDnormal'] = all_data.apply(
+            lambda row: util.getWordMoversDistance(
+                vectors_normal, row['articleBody'], row['Headline']
+                ), axis=1)
     mkStanceCSV(stances)
     #stances.to_csv("train/train_stances.csv")
+
+if 'negated_headline' not in stancecols:
+    print('Getting negated words from headline with Stanford CoreNLP')
+    from pycorenlp import StanfordCoreNLP
+    # make sure you start the server in another tab/window first!
+    my_nlp = StanfordCoreNLP('http://localhost:9000')
+    stances['negated_headline'] = stances.apply(lambda row: util.getNegatedWords(row['Headline'], my_nlp),axis=1)
+    mkStanceCSV(stances)
 
 if 'negated_body' not in bodycols:
     print('Getting negated words from body with Stanford CoreNLP')
@@ -158,49 +172,38 @@ if 'negated_body' not in bodycols:
     bodies['negated_body'] = bodies.apply(lambda row: util.getNegatedWords(row['articleBody'], my_nlp),axis=1)
     mkBodyCSV(bodies)
 
-    #bodies.to_csv(w_body_file, index=True)
 
-#    all_data.merge(
-#            all_data.apply(lambda s: pd.Series({'feature1':s+1, 'feature2':s-1})), 
-#left_index=True, right_index=True
-#)
-
-#    stances['negatedWMD'] = all_data.apply(lambda row: util.getWordMoversDistance(vectors, row['articleBody'], row['Headline']), axis=1) 
-
-if 'closest_sentence' not in stancecols:
-    print('Getting closest sentence to headline')
+if 'closest_by_cos' not in stancecols:
+    print('Getting closest sentence to headline and related features')
     vectorizer = TfidfVectorizer(tokenizer=util.LemmaTokenizer())
     vectors = KeyedVectors.load_word2vec_format(
             "data/GoogleNews-vectors-negative300.bin.gz", binary=True
             )
+    vectors_normal = copy.deepcopy(vectors)
+    vectors_normal.init_sims(replace=True)
     all_data2 = all_data.merge(
-            all_data.apply(lambda row: pd.Series(util.getClosest(vectors,vectorizer,row['Headline'],row['articleBody'])),axis=1),
+            all_data.apply(lambda row: pd.Series(util.getClosest(vectors,vectors_normal,vectorizer,row['Headline'],row['articleBody'])),axis=1),
         left_index=True, 
         right_index=True
     )
     all_data2.to_csv('closest.csv', index=False)
-    stances.loc[:,'closest_by_cos':'closest_same'] = all_data2.loc[:,'closest_by_cos':'closest_same']
+    stances = pd.concat([stances, all_data2], axis=1)
     mkStancCSV(stances)
 
-# get cosine similarity / WMD between each sentence and the headline
-# choose the most similar sentence.
-# save sentence AND cosine AND WMD
 
+# This class is needed to break out the complaint column in the estimation pipeline that comes later
+class ItemSelector(BaseEstimator, TransformerMixin):
+    """For data grouped by feature, select subset of data at a provided key.
+    The data is expected to be stored in a 2D data structure, where the first
+    index is over features and the second is over samples. 
+    """
+    def __init__(self, key):
+        self.key = key
+    def fit(self, x, y=None):
+        return self
+    def transform(self, data_dict):
+        return data_dict[self.key]
 
-
-## This class is needed to break out the complaint column in the estimation pipeline that comes later
-#class ItemSelector(BaseEstimator, TransformerMixin):
-#    """For data grouped by feature, select subset of data at a provided key.
-#    The data is expected to be stored in a 2D data structure, where the first
-#    index is over features and the second is over samples. 
-#    """
-#    def __init__(self, key):
-#        self.key = key
-#    def fit(self, x, y=None):
-#        return self
-#    def transform(self, data_dict):
-#        return data_dict[self.key]
-#
 #
 #class QuestionMarkAndNegData(BaseEstimator, TransformerMixin):
 #    """Extract all features from each document for DictVectorizer"""
@@ -393,32 +396,32 @@ if 'closest_sentence' not in stancecols:
 ##                # ('best', TruncatedSVD(n_components=150)),
 ##            ])),
 #            # Featurizes dates according to DateData's transform method
-#            ('DiscussWordData', Pipeline([
-#                ('features', DiscussWordData()),  # returns a list of dicts
-#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-#                ('scaler', MaxAbsScaler())
-#            ])),
-#            ('RefutingWordData', Pipeline([
-#                ('features', RefutingWordData()),  # returns a list of dicts
-#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-#                ('scaler', MaxAbsScaler())
-#            ])),
-#            ('QuestionMarkAndNegData', Pipeline([
-#                ('features', QuestionMarkAndNegData()),  # returns a list of dicts
-#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-#                ('scaler', MaxAbsScaler())
-#            ])),
-##            ('cosineSimilarity', Pipeline([
-##                ('selector', ItemSelector(key='cosineSimilarity')),
-##                ('features', CosineSimilarityData()),  # returns a list of dicts
+##            ('DiscussWordData', Pipeline([
+##                ('features', DiscussWordData()),  # returns a list of dicts
 ##                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
 ##                ('scaler', MaxAbsScaler())
-##            ]))
+##            ])),
+##            ('RefutingWordData', Pipeline([
+##                ('features', RefutingWordData()),  # returns a list of dicts
+##                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+##                ('scaler', MaxAbsScaler())
+##            ])),
+##            ('QuestionMarkAndNegData', Pipeline([
+##                ('features', QuestionMarkAndNegData()),  # returns a list of dicts
+##                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+##                ('scaler', MaxAbsScaler())
+##            ])),
 #            ('cosineSimilarity', Pipeline([
+#                ('selector', ItemSelector(key='cosine')),
 #                ('features', CosineSimilarityData()),  # returns a list of dicts
 #                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
 #                ('scaler', MaxAbsScaler())
 #            ]))
+##            ('cosineSimilarity', Pipeline([
+##                ('features', CosineSimilarityData()),  # returns a list of dicts
+##                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+##                ('scaler', MaxAbsScaler())
+##            ]))
 #        ],
 #    )),
 #    # Use logistic regression
