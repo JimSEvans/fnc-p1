@@ -1,4 +1,6 @@
 import string
+import random
+import pandas as pd
 from nltk.stem import WordNetLemmatizer
 from nltk import sent_tokenize, word_tokenize
 from nltk.corpus import stopwords
@@ -107,6 +109,6 @@ def splitIntoSets(stance_df, percentage):
     test_ids = list(dg_test_set | ag_test_set | dc_test_set)
     test_ids_df = pd.DataFrame({'Body ID':test_ids})
     train_ids_df = pd.DataFrame({'Body ID':train_ids})
-    train_stances_df = pd.merge(stances, train_ids_df, how='inner', left_on='Body ID', right_on='Body ID', sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
-    test_stances_df = pd.merge(stances, test_ids_df, how='inner', left_on='Body ID', right_index=True, copy=True, indicator=False)
+    train_stances_df = pd.merge(stance_df, train_ids_df, how='inner', left_on='Body ID', right_on='Body ID', sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+    test_stances_df = pd.merge(stance_df, test_ids_df, how='inner', left_on='Body ID', right_index=True, copy=True, indicator=False)
     return [train_stances_df, test_stances_df]

@@ -1,3 +1,4 @@
+#java -mx4g -cp "*" edu.stanford.nlp.pipeline.StanfordCoreNLPServer -port 9000 -timeout 15000
 #df.merge(df.apply(lambda row: pd.Series({'c':row['a'] + row['b'], 'd':row['a']**2*row['b']}), axis = 1), left_index=True, right_index=True)
 # 22563.250 was the top score
 # This is a multi-class classification task. It is part 1 of the Fake News Challenge.
@@ -190,7 +191,7 @@ if 'closest_by_cos' not in stancecols:
     stances = pd.concat([stances, all_data2], axis=1)
     mkStancCSV(stances)
 
-
+maxWMD = stances[stances['WMD']!=np.inf]['WMD'].max()
 # This class is needed to break out the complaint column in the estimation pipeline that comes later
 class ItemSelector(BaseEstimator, TransformerMixin):
     """For data grouped by feature, select subset of data at a provided key.
@@ -377,132 +378,106 @@ class ItemSelector(BaseEstimator, TransformerMixin):
 ##        return stems
 ##    def __call__(self, doc):
 ##        return self.tokenize_and_stem(doc)
+class WMDData(BaseEstimator, TransformerMixin):
+    """Extract features from each document for DictVectorizer"""
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, wmds):
+        return [{'wmd': wmd if wmd != np.inf else maxWMD}
+                for wmd in wmds]
+
+class CosineSimilarityData(BaseEstimator, TransformerMixin):
+    """Extract features from each document for DictVectorizer"""
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, cosines):
+        return [{'cos': cosine}
+                for cosine in cosines]
 #
 ## custom tokenizer to process text strings
 #
-#classifier = Pipeline([
-#    # Combining complaint text features, date features, zip_code features, and state
-#    ('union', FeatureUnion(
-#        transformer_list=[
-#            # Pipeline for standard bag-of-words TF-IDF stemmed model for body
-##            ('articleBodyBoW', Pipeline([
-##                ('selector', ItemSelector(key='articleBody')),
-##                ('tfidf', TfidfVectorizer(tokenizer=LemmaTokenizer())),
-##                # ('best', TruncatedSVD(n_components=150)),
-##            ])),
-##            ('HeadlineBoW', Pipeline([
-##                ('selector', ItemSelector(key='Headline')),
-##                ('tfidf', TfidfVectorizer(tokenizer=LemmaTokenizer())),
-##                # ('best', TruncatedSVD(n_components=150)),
-##            ])),
-#            # Featurizes dates according to DateData's transform method
-##            ('DiscussWordData', Pipeline([
-##                ('features', DiscussWordData()),  # returns a list of dicts
-##                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-##                ('scaler', MaxAbsScaler())
-##            ])),
-##            ('RefutingWordData', Pipeline([
-##                ('features', RefutingWordData()),  # returns a list of dicts
-##                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-##                ('scaler', MaxAbsScaler())
-##            ])),
-##            ('QuestionMarkAndNegData', Pipeline([
-##                ('features', QuestionMarkAndNegData()),  # returns a list of dicts
-##                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-##                ('scaler', MaxAbsScaler())
-##            ])),
+classifier = Pipeline([
+    # Combining complaint text features, date features, zip_code features, and state
+    ('union', FeatureUnion(
+        transformer_list=[
+            # Pipeline for standard bag-of-words TF-IDF stemmed model for body
+#            ('articleBodyBoW', Pipeline([
+#                ('selector', ItemSelector(key='articleBody')),
+#                ('tfidf', TfidfVectorizer(tokenizer=LemmaTokenizer())),
+#                # ('best', TruncatedSVD(n_components=150)),
+#            ])),
+#            ('HeadlineBoW', Pipeline([
+#                ('selector', ItemSelector(key='Headline')),
+#                ('tfidf', TfidfVectorizer(tokenizer=LemmaTokenizer())),
+#                # ('best', TruncatedSVD(n_components=150)),
+#            ])),
+            # Featurizes dates according to DateData's transform method
+#            ('DiscussWordData', Pipeline([
+#                ('features', DiscussWordData()),  # returns a list of dicts
+#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+#                ('scaler', MaxAbsScaler())
+#            ])),
+#            ('RefutingWordData', Pipeline([
+#                ('features', RefutingWordData()),  # returns a list of dicts
+#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+#                ('scaler', MaxAbsScaler())
+#            ])),
+#            ('QuestionMarkAndNegData', Pipeline([
+#                ('features', QuestionMarkAndNegData()),  # returns a list of dicts
+#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+#                ('scaler', MaxAbsScaler())
+#            ])),
+            ('wmd', Pipeline([
+                ('selector', ItemSelector(key='WMD')),
+                ('features', WMDData()),  # returns a list of dicts
+                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+                #('scaler', MaxAbsScaler())
+            ])),
+            ('cosineSimilarity', Pipeline([
+                ('selector', ItemSelector(key='cosine')),
+                ('features', CosineSimilarityData()),  # returns a list of dicts
+                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+                #('scaler', MaxAbsScaler())
+            ]))
 #            ('cosineSimilarity', Pipeline([
-#                ('selector', ItemSelector(key='cosine')),
 #                ('features', CosineSimilarityData()),  # returns a list of dicts
 #                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
 #                ('scaler', MaxAbsScaler())
 #            ]))
-##            ('cosineSimilarity', Pipeline([
-##                ('features', CosineSimilarityData()),  # returns a list of dicts
-##                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-##                ('scaler', MaxAbsScaler())
-##            ]))
-#        ],
-#    )),
-#    # Use logistic regression
-#    ('classifier', LogisticRegression(C=0.1,class_weight='balanced'))
-#    #('classifier', SVC(C=1.0,class_weight='balanced'))
-#])
-## Rewrote the above pipleline since I was only using the "complaint" features in the final model
-##classifier = Pipeline([
-##    ('column_selector', ItemSelector(key='complaint')),
-##    ('vectorizer', TfidfVectorizer(tokenizer=StemTokenizer())),
-##    ('classifier', LogisticRegression(C=5.0))
-##    ])
-#
-#[training_and_dev_set_stance, test_set_stance] = splitIntoSets(stances, 0.15)
-#[training_set_stance, dev_set_stance] = splitIntoSets(training_and_dev_set_stance, 0.15) 
-#
-#training_on = training_set_stance
-#testing_on = dev_set_stance
-#if "real-test" in sys.argv:
-#    training_on = training_and_dev_set_stance
-#    testing_on = test_set_stance
-#
-##if "competition-test" in sys.argv:
-#
-#training_set = pd.merge(training_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
-#test_set = pd.merge(testing_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
-#
-### just unrelated vs related ******************* !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-##training_set['Stance'] = training_set.apply(lambda row: 'unrelated' if row['Stance'] == 'unrelated' else 'related', axis=1)
-##test_set['Stance'] = test_set.apply(lambda row: 'unrelated' if row['Stance'] == 'unrelated' else 'related', axis=1)
-### ******************* !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-#
-#classifier.fit(training_set.drop('Stance', axis = 1), training_set['Stance'])
-#
-## uncomment the following if testing on dev set
-#print("getting predicted labels...")
-#yhat = classifier.predict(test_set)
-#print(classification_report(test_set['Stance'], yhat))
-#print(accuracy_score(test_set['Stance'], yhat))
-#
-##def plot_confusion_matrix(cm, classes,
-##                          normalize=False,
-##                          title='Confusion matrix',
-##                          cmap=plt.cm.Blues):
-##    """
-##    This function prints and plots the confusion matrix.
-##    Normalization can be applied by setting `normalize=True`.
-##    """
-##    plt.imshow(cm, interpolation='nearest', cmap=cmap)
-##    plt.title(title)
-##    plt.colorbar()
-##    tick_marks = np.arange(len(classes))
-##    plt.xticks(tick_marks, classes, rotation=45)
-##    plt.yticks(tick_marks, classes)
-##    if normalize:
-##        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-##        print("Normalized confusion matrix")
-##    else:
-##        print('Confusion matrix, without normalization')
-##    print(cm)
-##    thresh = cm.max() / 2.
-##    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-##        plt.text(j, i, cm[i, j],
-##                 horizontalalignment="center",
-##                 color="white" if cm[i, j] > thresh else "black")
-##    plt.tight_layout()
-##    plt.ylabel('True label')
-##    plt.xlabel('Predicted label')
-### Compute confusion matrix
-##cnf_matrix = confusion_matrix(test_set['Stance'], yhat)
-##np.set_printoptions(precision=2)
-### Plot non-normalized confusion matrix
-##plt.figure()
-##plot_confusion_matrix(cnf_matrix, classes=class_names,
-##                      title='Confusion matrix, without normalization')
-### Plot normalized confusion matrix
-##plt.figure()
-##plot_confusion_matrix(cnf_matrix, classes=class_names, normalize=True,
-##                      title='Normalized confusion matrix')
-##plt.show()
-#print(report_score(test_set['Stance'], yhat))
+        ],
+    )),
+    # Use logistic regression
+    #('classifier', LogisticRegression(C=0.1,class_weight='balanced'))
+    #('classifier', SVC(C=1.0,class_weight='balanced'))
+    ('classifier', SVC(C=1.0,class_weight={'agree':4,'disagree':4,'discuss':4,'unrelated':1}))
+])
+
+[training_and_dev_set_stance, test_set_stance] = util.splitIntoSets(stances, 0.15)
+[training_set_stance, dev_set_stance] = util.splitIntoSets(training_and_dev_set_stance, 0.15) 
+
+print("************ using SUBSET only")
+training_on = training_set_stance[:2000]
+testing_on = dev_set_stance
+
+training_set = pd.merge(training_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+test_set = pd.merge(testing_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+
+classifier.fit(training_set.drop('Stance', axis = 1), training_set['Stance'])
+
+print("getting predicted labels...")
+hypotheses = classifier.predict(test_set)
+c_r = classification_report(test_set['Stance'], hypotheses)
+splits= c_r.split('\n')[2:6]
+fscore_mean = np.mean([float(x.strip().split()[3]) for x in splits])
+print('fscore mean')
+print(fscore_mean)
+print(c_r)
+print(accuracy_score(test_set['Stance'], hypotheses))
+print(report_score(test_set['Stance'], hypotheses))
 #
 #now = datetime.now()
 #date_parts = [str(x) for x in [now.month,now.day,now.year]]
