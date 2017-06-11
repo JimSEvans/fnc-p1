@@ -206,156 +206,156 @@ class ItemSelector(BaseEstimator, TransformerMixin):
         return data_dict[self.key]
 
 #
-#class QuestionMarkAndNegData(BaseEstimator, TransformerMixin):
-#    """Extract all features from each document for DictVectorizer"""
-#    def countNeg(self, hlstring, bdstring):
-#        hlres = hlstring.count("n\'t")
+class QuestionMarkAndNegData(BaseEstimator, TransformerMixin):
+    """Extract all features from each document for DictVectorizer"""
+    def countNeg(self, hlstring, bdstring):
+        hlres = hlstring.count("n\'t")
+        hltokens = hlstring.split()
+        hltokens2 = [t for t in hltokens if (t == 'not' or t == 'cannot')]
+        hlres += len(hltokens2)
+        bdres = bdstring.count("n\'t")
+        bdtokens = bdstring.split()
+        bdtokens2 = [t for t in bdtokens if (t == 'not' or t == 'cannot')]
+        bdres += len(bdtokens2)
+#bool
+        hlboolres = "n\'t" in hlstring
+        hlbooltokens = hlstring.split()
+        hlbooltokens2 = [t for t in hlbooltokens if (t == 'not' or t == 'cannot')]
+        hlboolres = hlboolres or (len(hlbooltokens2) > 0)
+        bdboolres = "n\'t" in bdstring
+        bdbooltokens = bdstring.split()
+        bdbooltokens2 = [t for t in bdbooltokens if (t == 'not' or t == 'cannot')]
+        bdboolres = bdboolres or (len(bdbooltokens2) > 0)
+        return {'hl_question_mark_count': hlstring.count("?"),
+                    'hl_question_mark_bool': "?" in hlstring,
+                    'hl_neg_count': hlres,
+                    'hl_neg_bool': hlboolres,
+                    'bd_question_mark_bool': "?" in bdstring,
+                    'bd_neg_count': bdres,
+                    'bd_neg_bool': bdboolres,
+                    'abs_count_diff': hlres-bdres,
+                    'abs_bool_diff': hlboolres-bdboolres
+                }
+    def fit(self, df, y=None):
+        return self
+
+    def transform(self, df):
+        #scaler = MinMaxScaler()
+        res =  df.apply(lambda row: self.countNeg(row['Headline'],row['articleBody']), axis=1)
+        #foo = scaler.fit_transform(np.array([x['hl_question_mark_count'] for x in res]).reshape(-1,1))
+        return(res)
+
+refuting_words = [
+        'fake',
+        'fraud',
+        'hoax',
+        'false',
+        'deny', 'denies',
+        # 'refute',
+        'not',
+        'despite',
+        'nope',
+        'doubt', 'doubts',
+        'bogus',
+        'debunk',
+        'pranks',
+        'retract'
+    ]
+
+discuss_words = [
+        'allege', 'alleges', 'alleged', 'allegedly',
+        'reportedly','reports','reported',
+        'apparently', 'appears',
+        'suggests',
+        'seemingly', 'seems',
+        'claims', 'claimed', 'claiming'#,
+        #'accuses', 'accused', 'accusation'
+    ]
+
+class DiscussWordData(BaseEstimator, TransformerMixin):
+    """Extract all features from each document for DictVectorizer"""
+    def countNeg(self, hlstring, bdstring):
+        hltokens = hlstring.split()
+        hltokens2 = [t for t in hltokens if t in discuss_words]
+        hlres = len(hltokens2)
+        bdtokens = bdstring.split()
+        bdtokens2 = [t for t in bdtokens if t in discuss_words]
+        bdres = len(bdtokens2)
+#bool
+        hlbooltokens = hlstring.split()
+        hlbooltokens2 = [t for t in hlbooltokens if t in discuss_words]
+        hlboolres = len(hlbooltokens2) > 0
+        bdbooltokens = bdstring.split()
+        bdbooltokens2 = [t for t in bdbooltokens if (t == 'not' or t == 'cannot')]
+        bdboolres = len(bdbooltokens2) > 0
+        return {
+                    'dhl_neg_count': hlres,
+                    'dhl_neg_bool': hlboolres,
+                    'dbd_neg_count': bdres,
+                    'dbd_neg_bool': bdboolres,
+                    'dabs_count_diff': hlres-bdres,
+                    'dabs_bool_diff': hlboolres-bdboolres
+                }
+    def fit(self, df, y=None):
+        return self
+
+    def transform(self, df):
+        res =  df.apply(lambda row: self.countNeg(row['Headline'],row['articleBody']), axis=1)
+        return(res)
+
+class RefutingWordData(BaseEstimator, TransformerMixin):
+    """Extract all features from each document for DictVectorizer"""
+    def countNeg(self, hlstring, bdstring):
+        hltokens = hlstring.split()
+        hltokens2 = [t for t in hltokens if t in refuting_words]
+        hlres = len(hltokens2)
+        bdtokens = bdstring.split()
+        bdtokens2 = [t for t in bdtokens if t in refuting_words]
+        bdres = len(bdtokens2)
+#bool
+        hlbooltokens = hlstring.split()
+        hlbooltokens2 = [t for t in hlbooltokens if t in refuting_words]
+        hlboolres = len(hlbooltokens2) > 0
+        bdbooltokens = bdstring.split()
+        bdbooltokens2 = [t for t in bdbooltokens if (t == 'not' or t == 'cannot')]
+        bdboolres = len(bdbooltokens2) > 0
+        return {
+                    'rhl_neg_count': hlres,
+                    'rhl_neg_bool': hlboolres,
+                    'rbd_neg_count': bdres,
+                    'rbd_neg_bool': bdboolres,
+                    'rabs_count_diff': hlres-bdres,
+                    'rabs_bool_diff': hlboolres-bdboolres
+                }
+    def fit(self, df, y=None):
+        return self
+
+    def transform(self, df):
+        res =  df.apply(lambda row: self.countNeg(row['Headline'],row['articleBody']), axis=1)
+        return(res)
+
+
+#    def boolNeg(self, hlstring):
+#        hlres = "n\'t" in hlstring
 #        hltokens = hlstring.split()
 #        hltokens2 = [t for t in hltokens if (t == 'not' or t == 'cannot')]
-#        hlres += len(hltokens2)
-#        bdres = bdstring.count("n\'t")
+#        hlres = hlres or (len(hltokens2) > 0)
+#        bdres = "n\'t" in bdstring
 #        bdtokens = bdstring.split()
 #        bdtokens2 = [t for t in bdtokens if (t == 'not' or t == 'cannot')]
-#        bdres += len(bdtokens2)
-##bool
-#        hlboolres = "n\'t" in hlstring
-#        hlbooltokens = hlstring.split()
-#        hlbooltokens2 = [t for t in hlbooltokens if (t == 'not' or t == 'cannot')]
-#        hlboolres = hlboolres or (len(hlbooltokens2) > 0)
-#        bdboolres = "n\'t" in bdstring
-#        bdbooltokens = bdstring.split()
-#        bdbooltokens2 = [t for t in bdbooltokens if (t == 'not' or t == 'cannot')]
-#        bdboolres = bdboolres or (len(bdbooltokens2) > 0)
-#        return {'hl_question_mark_count': hlstring.count("?"),
-#                    'hl_question_mark_bool': "?" in hlstring,
-#                    'hl_neg_count': hlres,
-#                    'hl_neg_bool': hlboolres,
-#                    'bd_question_mark_bool': "?" in bdstring,
-#                    'bd_neg_count': bdres,
-#                    'bd_neg_bool': bdboolres,
-#                    'abs_count_diff': hlres-bdres,
-#                    'abs_bool_diff': hlboolres-bdboolres
-#                }
-#    def fit(self, df, y=None):
-#        return self
-#
+#        bdres = bdres or (len(bdtokens2) > 0)
+#        return [hlres,bdres,abs(hlres-bdres)]
 #    def transform(self, df):
-#        #scaler = MinMaxScaler()
-#        res =  df.apply(lambda row: self.countNeg(row['Headline'],row['articleBody']), axis=1)
-#        #foo = scaler.fit_transform(np.array([x['hl_question_mark_count'] for x in res]).reshape(-1,1))
-#        return(res)
-#
-#refuting_words = [
-#        'fake',
-#        'fraud',
-#        'hoax',
-#        'false',
-#        'deny', 'denies',
-#        # 'refute',
-#        'not',
-#        'despite',
-#        'nope',
-#        'doubt', 'doubts',
-#        'bogus',
-#        'debunk',
-#        'pranks',
-#        'retract'
-#    ]
-#
-#discuss_words = [
-#        'allege', 'alleges', 'alleged', 'allegedly',
-#        'reportedly','reports','reported',
-#        'apparently', 'appears',
-#        'suggests',
-#        'seemingly', 'seems',
-#        'claims', 'claimed', 'claiming',
-#        'accuses', 'accused', 'accusation'
-#    ]
-#
-#class DiscussWordData(BaseEstimator, TransformerMixin):
-#    """Extract all features from each document for DictVectorizer"""
-#    def countNeg(self, hlstring, bdstring):
-#        hltokens = hlstring.split()
-#        hltokens2 = [t for t in hltokens if t in discuss_words]
-#        hlres = len(hltokens2)
-#        bdtokens = bdstring.split()
-#        bdtokens2 = [t for t in bdtokens if t in discuss_words]
-#        bdres = len(bdtokens2)
-##bool
-#        hlbooltokens = hlstring.split()
-#        hlbooltokens2 = [t for t in hlbooltokens if t in discuss_words]
-#        hlboolres = len(hlbooltokens2) > 0
-#        bdbooltokens = bdstring.split()
-#        bdbooltokens2 = [t for t in bdbooltokens if (t == 'not' or t == 'cannot')]
-#        bdboolres = len(bdbooltokens2) > 0
-#        return {
-#                    'dhl_neg_count': hlres,
-#                    'dhl_neg_bool': hlboolres,
-#                    'dbd_neg_count': bdres,
-#                    'dbd_neg_bool': bdboolres,
-#                    'dabs_count_diff': hlres-bdres,
-#                    'dabs_bool_diff': hlboolres-bdboolres
-#                }
-#    def fit(self, df, y=None):
-#        return self
-#
-#    def transform(self, df):
-#        res =  df.apply(lambda row: self.countNeg(row['Headline'],row['articleBody']), axis=1)
-#        return(res)
-#
-#class RefutingWordData(BaseEstimator, TransformerMixin):
-#    """Extract all features from each document for DictVectorizer"""
-#    def countNeg(self, hlstring, bdstring):
-#        hltokens = hlstring.split()
-#        hltokens2 = [t for t in hltokens if t in refuting_words]
-#        hlres = len(hltokens2)
-#        bdtokens = bdstring.split()
-#        bdtokens2 = [t for t in bdtokens if t in refuting_words]
-#        bdres = len(bdtokens2)
-##bool
-#        hlbooltokens = hlstring.split()
-#        hlbooltokens2 = [t for t in hlbooltokens if t in refuting_words]
-#        hlboolres = len(hlbooltokens2) > 0
-#        bdbooltokens = bdstring.split()
-#        bdbooltokens2 = [t for t in bdbooltokens if (t == 'not' or t == 'cannot')]
-#        bdboolres = len(bdbooltokens2) > 0
-#        return {
-#                    'rhl_neg_count': hlres,
-#                    'rhl_neg_bool': hlboolres,
-#                    'rbd_neg_count': bdres,
-#                    'rbd_neg_bool': bdboolres,
-#                    'rabs_count_diff': hlres-bdres,
-#                    'rabs_bool_diff': hlboolres-bdboolres
-#                }
-#    def fit(self, df, y=None):
-#        return self
-#
-#    def transform(self, df):
-#        res =  df.apply(lambda row: self.countNeg(row['Headline'],row['articleBody']), axis=1)
-#        return(res)
-#
-#
-##    def boolNeg(self, hlstring):
-##        hlres = "n\'t" in hlstring
-##        hltokens = hlstring.split()
-##        hltokens2 = [t for t in hltokens if (t == 'not' or t == 'cannot')]
-##        hlres = hlres or (len(hltokens2) > 0)
-##        bdres = "n\'t" in bdstring
-##        bdtokens = bdstring.split()
-##        bdtokens2 = [t for t in bdtokens if (t == 'not' or t == 'cannot')]
-##        bdres = bdres or (len(bdtokens2) > 0)
-##        return [hlres,bdres,abs(hlres-bdres)]
-##    def transform(self, df):
-##        hl = df['Headline']
-##        bd = df['articleBody']
-##        return [
-##                {
-##                    'question_mark_count': string.count("?"),
-##                    'question_mark_bool': "?" in string,
-##                    'neg_count': self.countNeg(string),
-##                    'neg_bool': self.boolNeg(string)
-##                    } for string in strings
-##                ]
+#        hl = df['Headline']
+#        bd = df['articleBody']
+#        return [
+#                {
+#                    'question_mark_count': string.count("?"),
+#                    'question_mark_bool': "?" in string,
+#                    'neg_count': self.countNeg(string),
+#                    'neg_bool': self.boolNeg(string)
+#                    } for string in strings
+#                ]
 ## custom tokenizer to process text strings
 ##class StemTokenizer(object):
 ##    def __init__(self):
@@ -415,22 +415,22 @@ classifier = Pipeline([
 #                ('tfidf', TfidfVectorizer(tokenizer=LemmaTokenizer())),
 #                # ('best', TruncatedSVD(n_components=150)),
 #            ])),
-            # Featurizes dates according to DateData's transform method
-#            ('DiscussWordData', Pipeline([
-#                ('features', DiscussWordData()),  # returns a list of dicts
-#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-#                ('scaler', MaxAbsScaler())
-#            ])),
-#            ('RefutingWordData', Pipeline([
-#                ('features', RefutingWordData()),  # returns a list of dicts
-#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-#                ('scaler', MaxAbsScaler())
-#            ])),
-#            ('QuestionMarkAndNegData', Pipeline([
-#                ('features', QuestionMarkAndNegData()),  # returns a list of dicts
-#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-#                ('scaler', MaxAbsScaler())
-#            ])),
+           # Featurizes dates according to DateData's transform method
+            ('DiscussWordData', Pipeline([
+                ('features', DiscussWordData()),  # returns a list of dicts
+                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+                ('scaler', MaxAbsScaler())
+            ])),
+            ('RefutingWordData', Pipeline([
+                ('features', RefutingWordData()),  # returns a list of dicts
+                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+                ('scaler', MaxAbsScaler())
+            ])),
+            ('QuestionMarkAndNegData', Pipeline([
+                ('features', QuestionMarkAndNegData()),  # returns a list of dicts
+                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+                ('scaler', MaxAbsScaler())
+            ])),
             ('wmd', Pipeline([
                 ('selector', ItemSelector(key='WMD')),
                 ('features', WMDData()),  # returns a list of dicts
@@ -453,7 +453,7 @@ classifier = Pipeline([
     # Use logistic regression
     #('classifier', LogisticRegression(C=0.1,class_weight='balanced'))
     #('classifier', SVC(C=1.0,class_weight='balanced'))
-    ('classifier', SVC(C=1.0,class_weight={'agree':4,'disagree':4,'discuss':4,'unrelated':1}))
+    ('classifier', SVC(C=10.0,class_weight={'agree':4,'disagree':4,'discuss':4,'unrelated':1}))
 ])
 
 [training_and_dev_set_stance, test_set_stance] = util.splitIntoSets(stances, 0.15)
