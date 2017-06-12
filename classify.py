@@ -211,7 +211,8 @@ if 'negated_words_cosine_similarity' not in stancecols:
         right_index=True
     )
     all_data_negated_sim.to_csv('negated_similarity.csv', index=False)
-    stances = pd.concat([stances, all_data_negated_sim], axis=1)
+    stances = pd.concat([stances, all_data_negated_sim[['negated_words_cosine_similarity','negated_words_WMD']]], axis=1)
+
     mkStanceCSV(stances)
 
 #
@@ -476,8 +477,8 @@ if 'negated_words_cosine_similarity' not in stancecols:
 #training_on = training_set_stance[:3000]
 #testing_on = dev_set_stance
 #
-#training_set = pd.merge(training_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
-#test_set = pd.merge(testing_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
+#training_set = pd.merge(training_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=True)
+#test_set = pd.merge(testing_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=True)
 #
 #classifier.fit(training_set.drop('Stance', axis = 1), training_set['Stance'])
 #

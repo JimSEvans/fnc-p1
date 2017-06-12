@@ -95,11 +95,9 @@ def getNegatedSim(vectorsnormal, vectorizer, hlneg, bneg):
     WMD = None
     if pd.isnull(hlneg):
         hlneg = ''
-    if type(hlneg)!= 'str':
-        print(str(hlneg))
+    if not isinstance(hlneg, str):
         hlneg = ''
-    if type(bneg)!= 'str':
-        print(str(bneg))
+    if not isinstance(bneg, str):
         bneg = ''
     if pd.isnull(bneg):
         hlneg = ''
