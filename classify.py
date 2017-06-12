@@ -2,6 +2,8 @@
 #df.merge(df.apply(lambda row: pd.Series({'c':row['a'] + row['b'], 'd':row['a']**2*row['b']}), axis = 1), left_index=True, right_index=True)
 # 22563.250 was the top score
 # This is a multi-class classification task. It is part 1 of the Fake News Challenge.
+from sklearn.decomposition import TruncatedSVD
+from sklearn.neural_network import MLPClassifier
 import copy
 import util
 import sys
@@ -11,7 +13,6 @@ import pandas as pd
 from gensim.models import KeyedVectors
 from score import report_score
 from datetime import datetime
-from nltk.stem.porter import PorterStemmer
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, MaxAbsScaler
 from sklearn.externals import joblib
 from sklearn.metrics import accuracy_score, classification_report
@@ -357,27 +358,6 @@ class RefutingWordData(BaseEstimator, TransformerMixin):
 #                    } for string in strings
 #                ]
 ## custom tokenizer to process text strings
-##class StemTokenizer(object):
-##    def __init__(self):
-##        self.stemmer = PorterStemmer()
-##    def stem_tokens(self, tokens, stemmer):
-##        stemmed = []
-##        for item in tokens:
-##            stemmed.append(stemmer.stem(item))
-##        return stemmed
-##    def tokenize(self, text):
-##        lowercase_text = text.lower()
-##        tokens = word_tokenize(lowercase_text)
-##        filtered = [w for w in tokens if not w in stopwords.words('english')]
-##        return filtered
-##    def tokenize_and_stem(self, text):
-##        tokens = self.tokenize(text)
-##        if tokens is None:
-##            print("\ntokens is none\n" + text)
-##        stems = self.stem_tokens(tokens, self.stemmer)
-##        return stems
-##    def __call__(self, doc):
-##        return self.tokenize_and_stem(doc)
 class WMDData(BaseEstimator, TransformerMixin):
     """Extract features from each document for DictVectorizer"""
 
@@ -390,13 +370,27 @@ class WMDData(BaseEstimator, TransformerMixin):
 
 class CosineSimilarityData(BaseEstimator, TransformerMixin):
     """Extract features from each document for DictVectorizer"""
-
     def fit(self, x, y=None):
         return self
-
     def transform(self, cosines):
         return [{'cos': cosine}
                 for cosine in cosines]
+
+class ClosestCosData(BaseEstimator, TransformerMixin):
+    """Extract features from each document for DictVectorizer"""
+    def fit(self, x, y=None):
+        return self
+    def transform(self, closestcoss):
+        return [{'closest_cos': closestcos}
+                for closestcos in closestcoss]
+
+class ClosestWMDData(BaseEstimator, TransformerMixin):
+    """Extract features from each document for DictVectorizer"""
+    def fit(self, x, y=None):
+        return self
+    def transform(self, closestWMDs):
+        return [{'closest_cos': closestWMD if closestWMD != np.inf else maxWMD}
+                for closestWMD in closestWMDs]
 #
 ## custom tokenizer to process text strings
 #
@@ -405,17 +399,17 @@ classifier = Pipeline([
     ('union', FeatureUnion(
         transformer_list=[
             # Pipeline for standard bag-of-words TF-IDF stemmed model for body
-#            ('articleBodyBoW', Pipeline([
-#                ('selector', ItemSelector(key='articleBody')),
-#                ('tfidf', TfidfVectorizer(tokenizer=LemmaTokenizer())),
-#                # ('best', TruncatedSVD(n_components=150)),
-#            ])),
-#            ('HeadlineBoW', Pipeline([
-#                ('selector', ItemSelector(key='Headline')),
-#                ('tfidf', TfidfVectorizer(tokenizer=LemmaTokenizer())),
-#                # ('best', TruncatedSVD(n_components=150)),
-#            ])),
-           # Featurizes dates according to DateData's transform method
+            ('articleBodyBoW', Pipeline([
+                ('selector', ItemSelector(key='articleBody')),
+                ('tfidf', TfidfVectorizer(tokenizer=util.LemmaTokenizer())),
+                #('best', TruncatedSVD(n_components=100)),
+            ])),
+            ('HeadlineBoW', Pipeline([
+                ('selector', ItemSelector(key='Headline')),
+                ('tfidf', TfidfVectorizer(tokenizer=util.LemmaTokenizer())),
+                #('best', TruncatedSVD(n_components=100)),
+            ])),
+#           # Featurizes dates according to DateData's transform method
             ('DiscussWordData', Pipeline([
                 ('features', DiscussWordData()),  # returns a list of dicts
                 ('vect', DictVectorizer()),  # list of dicts -> feature matrix
@@ -437,30 +431,41 @@ classifier = Pipeline([
                 ('vect', DictVectorizer()),  # list of dicts -> feature matrix
                 #('scaler', MaxAbsScaler())
             ])),
+            ('closestCos', Pipeline([
+                ('selector', ItemSelector(key='closest_cos')),
+                ('features', ClosestCosData()),  # returns a list of dicts
+                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+                #('scaler', MaxAbsScaler())
+            ])),
+            ('closestWMD', Pipeline([
+                ('selector', ItemSelector(key='closest_wmd')),
+                ('features', ClosestWMDData()),  # returns a list of dicts
+                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
+                #('scaler', MaxAbsScaler())
+            ])),
             ('cosineSimilarity', Pipeline([
                 ('selector', ItemSelector(key='cosine')),
                 ('features', CosineSimilarityData()),  # returns a list of dicts
                 ('vect', DictVectorizer()),  # list of dicts -> feature matrix
                 #('scaler', MaxAbsScaler())
             ]))
-#            ('cosineSimilarity', Pipeline([
-#                ('features', CosineSimilarityData()),  # returns a list of dicts
-#                ('vect', DictVectorizer()),  # list of dicts -> feature matrix
-#                ('scaler', MaxAbsScaler())
-#            ]))
-        ],
+        ]
     )),
     # Use logistic regression
     #('classifier', LogisticRegression(C=0.1,class_weight='balanced'))
+    #('classifier', LogisticRegression(C=0.1,class_weight={'agree':4,'disagree':4,'discuss':4,'unrelated':1}))
     #('classifier', SVC(C=1.0,class_weight='balanced'))
-    ('classifier', SVC(C=10.0,class_weight={'agree':4,'disagree':4,'discuss':4,'unrelated':1}))
+    #('classifier', SVC(C=1.0,class_weight={'agree':4,'disagree':4,'discuss':4,'unrelated':1}))
+    #('classifier', SVC(C=0.1,class_weight={'agree':4,'disagree':4,'discuss':4,'unrelated':1}))
+    #('classifier', MLPClassifier(hidden_layer_sizes=(50,)))
+    ('classifier', MLPClassifier(alpha=0.05))
 ])
 
 [training_and_dev_set_stance, test_set_stance] = util.splitIntoSets(stances, 0.15)
 [training_set_stance, dev_set_stance] = util.splitIntoSets(training_and_dev_set_stance, 0.15) 
 
 print("************ using SUBSET only")
-training_on = training_set_stance[:2000]
+training_on = training_set_stance[:3000]
 testing_on = dev_set_stance
 
 training_set = pd.merge(training_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=False)
@@ -471,14 +476,15 @@ classifier.fit(training_set.drop('Stance', axis = 1), training_set['Stance'])
 print("getting predicted labels...")
 hypotheses = classifier.predict(test_set)
 c_r = classification_report(test_set['Stance'], hypotheses)
+print(c_r)
+print(accuracy_score(test_set['Stance'], hypotheses))
+print(report_score(test_set['Stance'], hypotheses))
+
 splits= c_r.split('\n')[2:6]
 fscore_mean = np.mean([float(x.strip().split()[3]) for x in splits])
 print('fscore mean')
 print(fscore_mean)
-print(c_r)
-print(accuracy_score(test_set['Stance'], hypotheses))
-print(report_score(test_set['Stance'], hypotheses))
-#
+
 #now = datetime.now()
 #date_parts = [str(x) for x in [now.month,now.day,now.year]]
 #time_parts = [str(x) for x in [now.hour,now.minute,now.second]]

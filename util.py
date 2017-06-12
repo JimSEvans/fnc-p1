@@ -1,9 +1,12 @@
+from nltk.stem.porter import PorterStemmer
 import string
 import random
 import pandas as pd
 from nltk.stem import WordNetLemmatizer
 from nltk import sent_tokenize, word_tokenize
 from nltk.corpus import stopwords
+
+random.seed(1)
 
 class LemmaTokenizer(object):
     def __init__(self):
@@ -27,6 +30,28 @@ class LemmaTokenizer(object):
         return stems
     def __call__(self, doc):
         return self.tokenize_and_lemmatize(doc)
+
+class StemTokenizer(object):
+    def __init__(self):
+        self.stemmer = PorterStemmer()
+    def stem_tokens(self, tokens, stemmer):
+        stemmed = []
+        for item in tokens:
+            stemmed.append(stemmer.stem(item))
+        return stemmed
+    def tokenize(self, text):
+        lowercase_text = text.lower()
+        tokens = word_tokenize(lowercase_text)
+        filtered = [w for w in tokens if not w in stopwords.words('english')]
+        return filtered
+    def tokenize_and_stem(self, text):
+        tokens = self.tokenize(text)
+        if tokens is None:
+            print("\ntokens is none\n" + text)
+        stems = self.stem_tokens(tokens, self.stemmer)
+        return stems
+    def __call__(self, doc):
+        return self.tokenize_and_stem(doc)
 
 
 def getWordMoversDistance(vectors, text1string, text2string):
