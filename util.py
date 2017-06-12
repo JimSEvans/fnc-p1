@@ -2,6 +2,7 @@ from nltk.stem.porter import PorterStemmer
 import string
 import random
 import pandas as pd
+import numpy as np
 from nltk.stem import WordNetLemmatizer
 from nltk import sent_tokenize, word_tokenize
 from nltk.corpus import stopwords
@@ -88,24 +89,66 @@ def getCosineSimilarity(vectorizer, text1, text2):
     #print(res)
     return res 
 
-def getClosest(vectors, vectorizer, hl, b):
+def getNegatedSim(vectorsnormal, vectorizer, hlneg, bneg):
+    lem = LemmaTokenizer()
+    cosineSimilarity = None
+    WMD = None
+    if pd.isnull(hlneg):
+        hlneg = ''
+    if type(hlneg)!= 'str':
+        print(str(hlneg))
+        hlneg = ''
+    if type(bneg)!= 'str':
+        print(str(bneg))
+        bneg = ''
+    if pd.isnull(bneg):
+        hlneg = ''
+    if lem.tokenize(hlneg) == []:
+        hlneg = np.nan
+    if lem.tokenize(bneg) == []:
+        bneg = np.nan
+    if pd.isnull(hlneg):
+        if pd.isnull(bneg):
+            cosineSimilarity = 1
+            WMD = 0
+        else:
+            cosineSimilarity = 0
+            WMD = 5
+    else:
+        if pd.isnull(bneg):
+            cosineSimilarity = 0
+            WMD = 5
+        else:
+            cosineSimilarity = getCosineSimilarity(vectorizer, bneg, hlneg)
+            WMD = getWordMoversDistance(vectorsnormal, bneg, hlneg)
+    return {'negated_words_cosine_similarity': cosineSimilarity,
+            'negated_words_WMD': WMD}
+
+def getClosest(vectors, vectorsnormal, vectorizer, hl, b):
     sentences = sent_tokenize(b)
     cosSimilarities = [getCosineSimilarity(vectorizer,sent, hl) for sent in sentences]
     WMDs = [getWordMoversDistance(vectors, sent, hl) for sent in sentences]
+    normalWMDs = [getWordMoversDistance(vectorsnormal, sent, hl) for sent in sentences]
     maxCosSim = max(cosSimilarities)
     minWMD = min(WMDs)
+    minNormalWMD = min(normalWMDs)
     cosBest = sentences[cosSimilarities.index(maxCosSim)]
     wmdBest = sentences[WMDs.index(minWMD)]
+    normalWMDBest = sentences[normalWMDs.index(minNormalWMD)]
     same = cosBest==wmdBest
+    same2 = normalWMDBest==wmdBest
+    same3 = normalWMDBest==cosBest
     return {
             'closest_by_cos':cosBest, 
             'closest_by_wmd':wmdBest, 
+            'closest_by_wmd_normal':normalWMDBest, 
             'closest_cos':maxCosSim, 
             'closest_wmd':minWMD,
-            'closest_same':same
+            'closest_wmd_normal':minNormalWMD,
+            'closest_same_cos_wmd':same,
+            'closest_same_wmd_wmd_normal':same2,
+            'closest_same_cos_wmd_normal':same3
             } 
-
-
 
 
 def splitIntoSets(stance_df, percentage):
