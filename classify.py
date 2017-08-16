@@ -412,40 +412,40 @@ class AnyData(BaseEstimator, TransformerMixin):
 #
 ## custom tokenizer to process text strings
 #
-def fnc_loss_func(ground_truth, predictions):
-    related = ['agree', 'disagree', 'discuss']
-    score = 0
-#    print('len ground truth')
-#    print(len(ground_truth))
-#    print(ground_truth)
-    for i in range(0, len(ground_truth)):
-        print(i)
-        gt = ground_truth[i]
-        pred = predictions[i]
-        if gt == 'unrelated':
-            if pred == 'unrelated':
-                score += 0.25
-        else:
-            if pred in related:
-                score += 0.25
-                if pred == gt:
-                    score += 0.75
-    num_unrelated = len([x for x in ground_truth if x == 'unrelated'])
-    num_related = len(predictions) - num_unrelated
-    maximum = num_unrelated * 0.25 + num_related * 1.00
-    norm_score = score/maximum
-    print('normalized score: ' + str(round(norm_score,2)))
-    return(norm_score)
+#def fnc_loss_func(ground_truth, predictions):
+#    related = ['agree', 'disagree', 'discuss']
+#    score = 0
+##    print('len ground truth')
+##    print(len(ground_truth))
+##    print(ground_truth)
+#    for i in range(0, len(ground_truth)):
+#        print(i)
+#        gt = ground_truth[i]
+#        pred = predictions[i]
+#        if gt == 'unrelated':
+#            if pred == 'unrelated':
+#                score += 0.25
+#        else:
+#            if pred in related:
+#                score += 0.25
+#                if pred == gt:
+#                    score += 0.75
+#    num_unrelated = len([x for x in ground_truth if x == 'unrelated'])
+#    num_related = len(predictions) - num_unrelated
+#    maximum = num_unrelated * 0.25 + num_related * 1.00
+#    norm_score = score/maximum
+#    print('normalized score: ' + str(round(norm_score,2)))
+#    return(norm_score)
 
-fnc_scorer = make_scorer(fnc_loss_func)
+#fnc_scorer = make_scorer(fnc_loss_func)
 
     #diff = np.abs(ground_truth - predictions).max()
     #return np.log(1 + diff)
 
-tuned_parameters = [
-    #{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': [1, 10, 100, 1000]},
-    {'C': [0.001, 0.01, 0.1, 1, 10, 100, 1000]}
-]
+#tuned_parameters = [
+#    #{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': [1, 10, 100, 1000]},
+#    {'C': [0.001, 0.01, 0.1, 1, 10, 100, 1000]}
+#]
 
 classifier = Pipeline([
     # Combining complaint text features, date features, zip_code features, and state
@@ -530,13 +530,13 @@ classifier = Pipeline([
     )),
     # Use logistic regression
     #('classifier', LogisticRegression(C=1.0,class_weight='balanced'))
-    ('classifier', GridSearchCV(LogisticRegression(C=1.0,class_weight='balanced'),param_grid=tuned_parameters,scoring=fnc_scorer))
+###    ('classifier', GridSearchCV(LogisticRegression(C=1.0,class_weight='balanced'),param_grid=tuned_parameters,scoring=fnc_scorer))
 #    ('classifier', LogisticRegression())
     #('classifier', LogisticRegression(C=0.1,class_weight={'agree':4,'disagree':4,'discuss':4,'unrelated':1}))
     #('classifier', SVC(C=1.0,class_weight='balanced'))
     #('classifier', SVC(C=1.0,class_weight={'agree':4,'disagree':4,'discuss':4,'unrelated':1}))
     #('classifier', SVC(C=0.1,class_weight={'agree':4,'disagree':4,'discuss':4,'unrelated':1}))
-    #('classifier', MLPClassifier(alpha=0.05))
+    ('classifier', MLPClassifier(alpha=0.05))
     #('classifier', MLPClassifier(alpha=0.03))
 ])
 
