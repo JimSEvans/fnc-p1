@@ -1,7 +1,9 @@
+# This is a multi-class classification task. It is basically part 1 of the Fake News Challenge.
+
 #java -mx4g -cp "*" edu.stanford.nlp.pipeline.StanfordCoreNLPServer -port 9000 -timeout 15000
-#df.merge(df.apply(lambda row: pd.Series({'c':row['a'] + row['b'], 'd':row['a']**2*row['b']}), axis = 1), left_index=True, right_index=True)
 # 22563.250 was the top score
-# This is a multi-class classification task. It is part 1 of the Fake News Challenge.
+from sklearn.metrics import make_scorer
+from sklearn.model_selection import GridSearchCV
 from sklearn.decomposition import TruncatedSVD
 from sklearn.neural_network import MLPClassifier
 import copy
@@ -25,6 +27,12 @@ from sklearn.multiclass import OneVsRestClassifier
 from sklearn.linear_model import LogisticRegression
 #from sklearn.svm import LinearSVC
 
+if 'test' in sys.argv:
+    test = 1
+
+body_file = None
+stance_file = None
+
 #read into DFs the  article body file and stance/headline file
 if os.path.isfile('train/train_bodies.csv'):
     body_file = 'train/train_bodies.csv'
@@ -42,11 +50,8 @@ else:
 w_body_file = 'train/train_bodies.csv' 
 w_stance_file = 'train/train_stances.csv' 
 
-#print(" ************ REMOVE INDEXING FOR REAL RUN *************")
 bodies = pd.read_csv(body_file, index_col='Body ID')
 stances = pd.read_csv(stance_file, index_col=None)
-#bodies = pd.read_csv(body_file, index_col='Body ID')
-#stances = pd.read_csv(stance_file, index_col=None)
 all_data = pd.merge(stances, bodies, how='inner', left_on='Body ID', right_index=True, suffixes=('_x', '_y'), indicator=True)
 
 def mkBodyCSV(dataframe):
@@ -61,9 +66,8 @@ if len(all_data[all_data['_merge']!='both']) != 0:
 bodycols = list(bodies)
 stancecols = list(stances)
 
-print('len bodies ' + str(len(bodies)))
-print('len stances ' + str(len(stances)))
-
+print('# bodies ' + str(len(bodies)))
+print('# stances ' + str(len(stances)))
 
 if 'bodyLang' not in bodycols:
     print('Using langdetect to detect language of body')
@@ -74,6 +78,7 @@ if 'bodyLang' not in bodycols:
     #bodies.to_csv(w_body_file, index=True)
 #
 if 'tr_body' in sys.argv:
+#if 'body_translated' not in bodycols:
     print('Using Google Translate to translate body')
     bodies['articleBody'] = bodies['articleBody']
     from googletrans import Translator
@@ -93,14 +98,16 @@ if 'tr_body' in sys.argv:
                         writer.writerow([i,t.text])
                         bodies.loc[i,'articleBody'] = t.text
                         done = 1
+                        bodies.loc[i,'body_translated'] = True
                     except: 
                         time.sleep(5)
                         print('waiting 5 seconds, then trying again...')
             else:
-                pass
+                bodies.loc[i,'body_translated'] = False
     mkBodyCSV(bodies)
 
 if 'tr_headline' in sys.argv:
+#if 'headline_translated' not in bodycols:
     print('Using Google Translate to translate headline')
     from googletrans import Translator
     translator = Translator()
@@ -120,6 +127,7 @@ if 'tr_headline' in sys.argv:
                     stances.loc[i,'Headline'] = t.text
                     stances.loc[i,'headline_src_lang'] = t.src
                     done = 1
+                    bodies.loc[i,'headline_translated'] = True
                 except: 
                     time.sleep(5)
                     print('waiting 5 seconds, then trying again...')
@@ -404,6 +412,41 @@ class AnyData(BaseEstimator, TransformerMixin):
 #
 ## custom tokenizer to process text strings
 #
+def fnc_loss_func(ground_truth, predictions):
+    related = ['agree', 'disagree', 'discuss']
+    score = 0
+#    print('len ground truth')
+#    print(len(ground_truth))
+#    print(ground_truth)
+    for i in range(0, len(ground_truth)):
+        print(i)
+        gt = ground_truth[i]
+        pred = predictions[i]
+        if gt == 'unrelated':
+            if pred == 'unrelated':
+                score += 0.25
+        else:
+            if pred in related:
+                score += 0.25
+                if pred == gt:
+                    score += 0.75
+    num_unrelated = len([x for x in ground_truth if x == 'unrelated'])
+    num_related = len(predictions) - num_unrelated
+    maximum = num_unrelated * 0.25 + num_related * 1.00
+    norm_score = score/maximum
+    print('normalized score: ' + str(round(norm_score,2)))
+    return(norm_score)
+
+fnc_scorer = make_scorer(fnc_loss_func)
+
+    #diff = np.abs(ground_truth - predictions).max()
+    #return np.log(1 + diff)
+
+tuned_parameters = [
+    #{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': [1, 10, 100, 1000]},
+    {'C': [0.001, 0.01, 0.1, 1, 10, 100, 1000]}
+]
+
 classifier = Pipeline([
     # Combining complaint text features, date features, zip_code features, and state
     ('union', FeatureUnion(
@@ -416,10 +459,10 @@ classifier = Pipeline([
             ])),
             ('HeadlineBoW', Pipeline([
                 ('selector', ItemSelector(key='Headline')),
-                ('tfidf', TfidfVectorizer(tokenizer=util.LemmaTokenizer())),
+                ('tfidf', TfidfVectorizer(tokenizer=util.LemmaTokenizer()))
                 #('best', TruncatedSVD(n_components=100)),
             ])),
-#           # Featurizes dates according to DateData's transform method
+           # Featurizes dates according to DateData's transform method
             ('DiscussWordData', Pipeline([
                 ('features', DiscussWordData()),  # returns a list of dicts
                 ('vect', DictVectorizer()),  # list of dicts -> feature matrix
@@ -486,12 +529,14 @@ classifier = Pipeline([
         ]
     )),
     # Use logistic regression
-    #('classifier', LogisticRegression(C=0.1,class_weight='balanced'))
+    #('classifier', LogisticRegression(C=1.0,class_weight='balanced'))
+    ('classifier', GridSearchCV(LogisticRegression(C=1.0,class_weight='balanced'),param_grid=tuned_parameters,scoring=fnc_scorer))
+#    ('classifier', LogisticRegression())
     #('classifier', LogisticRegression(C=0.1,class_weight={'agree':4,'disagree':4,'discuss':4,'unrelated':1}))
     #('classifier', SVC(C=1.0,class_weight='balanced'))
     #('classifier', SVC(C=1.0,class_weight={'agree':4,'disagree':4,'discuss':4,'unrelated':1}))
     #('classifier', SVC(C=0.1,class_weight={'agree':4,'disagree':4,'discuss':4,'unrelated':1}))
-    ('classifier', MLPClassifier(alpha=0.05))
+    #('classifier', MLPClassifier(alpha=0.05))
     #('classifier', MLPClassifier(alpha=0.03))
 ])
 
@@ -501,10 +546,12 @@ classifier = Pipeline([
 training_on = None
 testing_on = None
 #print("************ using SUBSET only")
+test = 0
 if 'test' in sys.argv:
     print('using real test set')
     training_on = training_and_dev_set_stance
     testing_on = test_set_stance
+    test = 1
 else:
     training_on = training_set_stance
     testing_on = dev_set_stance
@@ -514,24 +561,23 @@ training_set = pd.merge(training_on, bodies, how='inner', left_on='Body ID', rig
 test_set = pd.merge(testing_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=True)
 
 classifier.fit(training_set.drop('Stance', axis = 1), training_set['Stance'])
-
-print("getting predicted labels...")
-hypotheses = classifier.predict(test_set)
-#hypotheses = ['unrelated'] * len(test_set)
-c_r = classification_report(test_set['Stance'], hypotheses)
-print(c_r)
-print(accuracy_score(test_set['Stance'], hypotheses))
-print(report_score(test_set['Stance'], hypotheses))
-
-splits= c_r.split('\n')[2:6]
-fscore_mean = np.mean([float(x.strip().split()[3]) for x in splits])
-print('fscore mean')
-print(fscore_mean)
-
-now = datetime.now()
-date_parts = [str(x) for x in [now.month,now.day,now.year]]
-time_parts = [str(x) for x in [now.hour,now.minute,now.second]]
-now_str = ''
-joblib.dump(classifier, 'classifiers/classifier' + now_str + '.pkl')
-now_str = "-".join(date_parts) + "_" + "-".join(time_parts)
-
+print(classifier.best_params_)
+#print("getting predicted labels...")
+#hypotheses = classifier.predict(test_set)
+##hypotheses = ['unrelated'] * len(test_set)
+#c_r = classification_report(test_set['Stance'], hypotheses)
+#print(c_r)
+#print(accuracy_score(test_set['Stance'], hypotheses))
+#print(report_score(test_set['Stance'], hypotheses))
+#
+#splits= c_r.split('\n')[2:6]
+#fscore_mean = np.mean([float(x.strip().split()[3]) for x in splits])
+#print('fscore mean')
+#print(fscore_mean)
+#
+#now = datetime.now()
+#date_parts = [str(x) for x in [now.month,now.day,now.year]]
+#time_parts = [str(x) for x in [now.hour,now.minute,now.second]]
+#now_str = ''
+#joblib.dump(classifier, 'classifiers/classifier' + now_str + '.pkl')
+#now_str = "-".join(date_parts) + "_" + "-".join(time_parts)
