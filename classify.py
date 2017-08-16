@@ -561,19 +561,20 @@ training_set = pd.merge(training_on, bodies, how='inner', left_on='Body ID', rig
 test_set = pd.merge(testing_on, bodies, how='inner', left_on='Body ID', right_index=True, sort=True, suffixes=('_x', '_y'), copy=True, indicator=True)
 
 classifier.fit(training_set.drop('Stance', axis = 1), training_set['Stance'])
-print(classifier.best_params_)
-#print("getting predicted labels...")
-#hypotheses = classifier.predict(test_set)
-##hypotheses = ['unrelated'] * len(test_set)
-#c_r = classification_report(test_set['Stance'], hypotheses)
-#print(c_r)
-#print(accuracy_score(test_set['Stance'], hypotheses))
-#print(report_score(test_set['Stance'], hypotheses))
-#
-#splits= c_r.split('\n')[2:6]
-#fscore_mean = np.mean([float(x.strip().split()[3]) for x in splits])
-#print('fscore mean')
-#print(fscore_mean)
+#print(classifier.best_params_)
+
+print("getting predicted labels...")
+hypotheses = classifier.predict(test_set)
+#hypotheses = ['unrelated'] * len(test_set)
+c_r = classification_report(test_set['Stance'], hypotheses)
+print(c_r)
+print(accuracy_score(test_set['Stance'], hypotheses))
+print(report_score(test_set['Stance'], hypotheses))
+
+splits= c_r.split('\n')[2:6]
+fscore_mean = np.mean([float(x.strip().split()[3]) for x in splits])
+print('fscore mean')
+print(fscore_mean)
 #
 #now = datetime.now()
 #date_parts = [str(x) for x in [now.month,now.day,now.year]]
